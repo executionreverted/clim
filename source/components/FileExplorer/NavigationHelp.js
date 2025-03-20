@@ -2,7 +2,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-const NavigationHelp = ({ width }) => {
+const NavigationHelp = ({ width = 80, showPickOption = true }) => {
   return (
     <Box
       width={width}
@@ -16,13 +16,15 @@ const NavigationHelp = ({ width }) => {
           <Text color="green">↑/↓</Text>: Navigate |
           <Text color="green"> PgUp/PgDn</Text>: Jump |
           <Text color="green"> ENTER</Text>: Open dir |
-          <Text color="green"> BACKSPACE/h</Text>: Parent dir |
-          <Text color="green"> b</Text>: Back
+          <Text color="green"> h/Delete</Text>: Parent dir |
+          <Text color="green"> b</Text>: Go back
         </Text>
       </Box>
       <Box width={width - 4}>
         <Text wrap="truncate">
-          <Text color="green">Ctrl+↑/↓</Text>: Scroll preview content for text files
+          <Text color="green">Ctrl+↑/↓</Text>: Scroll preview |
+          <Text color="green"> o</Text>: Open file in system |
+          {showPickOption && <Text><Text color="green"> p</Text>: Pick file</Text>}
         </Text>
       </Box>
     </Box>
