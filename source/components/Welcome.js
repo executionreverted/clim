@@ -6,8 +6,10 @@ import BigText from 'ink-big-text';
 
 const Welcome = ({ onStart, width = 100, height = 24 }) => {
   useInput((input, key) => {
-    if (input === 'enter' || key.return) {
-      onStart();
+    if (input === 'c') {
+      onStart('chat');
+    } else if (input === 'e') {
+      onStart('explorer')
     }
   });
 
@@ -24,15 +26,17 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
       <Box flexGrow={1} />
 
       <Gradient name="rainbow">
-        <BigText text="FileXplorer" align="center" font="block" />
+        <BigText text="Termin4LHub" align="center" font="block" />
       </Gradient>
 
       <Box marginY={1}>
-        <Text>A simple terminal file explorer</Text>
+        <Text>A simple terminal app</Text>
       </Box>
 
       <Box marginY={2} padding={1} borderStyle="round" borderColor="green">
-        <Text>Press <Text color="green" bold>ENTER</Text> to start exploring files</Text>
+
+        <Text>Press <Text color="green" bold>c</Text> to start p2p chat</Text>
+        <Text>Press <Text color="green" bold>e</Text> to start exploring files</Text>
       </Box>
 
       <Box flexGrow={1} />
