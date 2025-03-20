@@ -14,7 +14,7 @@ const App = () => {
 
   // Exit on 'q' or ESC
   useInput((input, key) => {
-    if (key.escape || input === 'q') {
+    if (key.ctrl && input === 'q') {
       exit();
     }
   });
