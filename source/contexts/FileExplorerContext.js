@@ -7,7 +7,7 @@ const FileExplorerContext = createContext();
 
 export const useFileExplorer = () => useContext(FileExplorerContext);
 
-export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBack }) => {
+export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBack, multiSelect = false }) => {
   const [currentPath, setCurrentPath] = useState(initialPath || process.cwd());
   const [files, setFiles] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -16,11 +16,16 @@ export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBa
   const [previewScrollOffset, setPreviewScrollOffset] = useState(0);
   const [history, setHistory] = useState([]);
 
+  // New state for multiselect
+  const [selectedFiles, setSelectedFiles] = useState([]);
+
   // Load directory contents on path change
   useEffect(() => {
     loadDirectory(currentPath, setFiles, setSelectedIndex, setError, setVisibleStartIndex);
     // Start with ".." selected
     setSelectedIndex(-1);
+    // Clear selected files when changing directory
+    setSelectedFiles([]);
   }, [currentPath]);
 
   // Reset preview scroll when selecting a different file
@@ -59,8 +64,27 @@ export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBa
   };
 
   const selectFile = (file) => {
-    if (onFileSelect && file && !file.isDirectory) {
-      onFileSelect(file);
+    if (onFileSelect) {
+      if (multiSelect) {
+        // In multiselect mode, return all selected files
+        onFileSelect(selectedFiles);
+      } else if (file && !file.isDirectory) {
+        // In single select mode, return one file
+        onFileSelect(file);
+      }
+    }
+  };
+
+  // Toggle selection of a file for multiselect
+  const toggleFileSelection = (file) => {
+    if (!file || file.isDirectory) return;
+
+    const isAlreadySelected = selectedFiles.some(f => f.path === file.path);
+
+    if (isAlreadySelected) {
+      setSelectedFiles(selectedFiles.filter(f => f.path !== file.path));
+    } else {
+      setSelectedFiles([...selectedFiles, file]);
     }
   };
 
@@ -93,6 +117,9 @@ export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBa
         goBack,
         selectFile,
         openFileInExplorer,
+        multiSelect,
+        selectedFiles,
+        toggleFileSelection,
       }}
     >
       {children}

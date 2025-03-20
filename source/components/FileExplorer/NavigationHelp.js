@@ -2,7 +2,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-const NavigationHelp = ({ width = 80, showPickOption = true }) => {
+const NavigationHelp = ({ width = 80, showPickOption = true, showMultiSelectOption = false }) => {
   return (
     <Box
       width={width}
@@ -25,6 +25,7 @@ const NavigationHelp = ({ width = 80, showPickOption = true }) => {
           <Text color="green">Ctrl+↑/↓</Text>: Scroll preview |
           <Text color="green"> o</Text>: Open file in system |
           {showPickOption && <Text><Text color="green"> p</Text>: Pick file</Text>}
+          {showMultiSelectOption && <Text> | <Text color="green">SPACE</Text>: Select file</Text>}
         </Text>
       </Box>
     </Box>

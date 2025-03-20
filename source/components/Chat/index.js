@@ -15,7 +15,8 @@ const ChatContent = ({ width, height }) => {
         initialPath={process.cwd()}
         onBack={() => setShowFileExplorer(false)}
         onFileSelect={handleFileSelect}
-        mode="picker" // Use picker mode for selecting files
+        mode="picker"
+        multiSelect={true} // Enable multiselect
       />
     );
   }

@@ -2,15 +2,28 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
+import { useFileExplorer } from '../../contexts/FileExplorerContext.js';
 
 const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, width = 40 }) => {
+  // Get multiselect state from context
+  const { multiSelect, selectedFiles } = useFileExplorer();
+
   // Adjust filename length based on available width
   const MAX_FILENAME_LENGTH = Math.max(10, Math.floor(width * 0.6));
 
   const renderFileItem = (item, index) => {
     const isSelected = index === selectedIndex;
-    const indicator = isSelected ? '>' : ' ';
+    const isCursorSelected = isSelected ? '>' : ' ';
     const icon = item.isDirectory ? '📁' : '📄';
+
+    // Check if file is in the multiselect array
+    const isMultiSelected = multiSelect &&
+      selectedFiles.some(file => file.path === item.path);
+
+    // Show selection indicator if multiselect is enabled
+    const multiSelectIndicator = multiSelect
+      ? (isMultiSelected ? '[✓]' : '[ ]')
+      : '';
 
     // Truncate filename if too long
     const displayName = item.name.length > MAX_FILENAME_LENGTH
@@ -23,7 +36,7 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
     return (
       <Box key={item.path} width={width - 4}>
         <Text color={isSelected ? 'green' : undefined} wrap="truncate">
-          {indicator} {icon} {displayName}
+          {isCursorSelected} {multiSelect ? multiSelectIndicator : ''} {icon} {displayName}
           <Text color="gray">{sizeText}</Text>
         </Text>
       </Box>
@@ -47,7 +60,7 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
           {/* Parent directory option */}
           <Box width={width - 4}>
             <Text color={selectedIndex === -1 ? 'green' : undefined} wrap="truncate">
-              {selectedIndex === -1 ? '>' : ' '} 📁 ..
+              {selectedIndex === -1 ? '>' : ' '} {multiSelect ? '   ' : ''} 📁 ..
             </Text>
           </Box>
 

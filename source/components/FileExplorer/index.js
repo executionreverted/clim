@@ -9,7 +9,7 @@ import { FileExplorerProvider, useFileExplorer } from '../../contexts/FileExplor
 // Direct import for 'open' package
 import open from 'open';
 
-const FileExplorerContent = ({ mode = 'browse' }) => {
+const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
   const { stdout } = useStdout();
   const [terminalWidth, setTerminalWidth] = useState(stdout.columns || 100);
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
@@ -28,6 +28,8 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
     navigateToDirectory,
     goBack,
     selectFile,
+    toggleFileSelection,
+    selectedFiles,
     openFileInExplorer
   } = useFileExplorer();
 
@@ -98,8 +100,15 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
         if (files[selectedIndex].isDirectory) {
           navigateToDirectory(files[selectedIndex]);
         } else if (mode === 'picker') {
-          // In picker mode, Enter selects the file
-          selectFile(files[selectedIndex]);
+          if (multiSelect) {
+            // In multiselect mode, Enter confirms all selected files
+            if (selectedFiles.length > 0) {
+              selectFile(files[selectedIndex]);
+            }
+          } else {
+            // In single picker mode, Enter selects the file
+            selectFile(files[selectedIndex]);
+          }
         }
       }
     } else if (input === 'b') {
@@ -113,6 +122,11 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
       // 'p' to pick/select a file in browse mode
       if (selectedIndex >= 0 && files[selectedIndex] && !files[selectedIndex].isDirectory) {
         selectFile(files[selectedIndex]);
+      }
+    } else if (input === ' ' && multiSelect) {
+      // Space to toggle selection in multiselect mode
+      if (selectedIndex >= 0 && files[selectedIndex]) {
+        toggleFileSelection(files[selectedIndex]);
       }
     }
   });
@@ -128,7 +142,7 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
     >
       <Box width={terminalWidth} paddingX={1}>
         <Text bold wrap="truncate">
-          File Explorer {mode === 'picker' ? '(Select a file)' : ''}
+          File Explorer {mode === 'picker' ? (multiSelect ? '(Select files with SPACE, confirm with ENTER)' : '(Select a file)') : ''}
         </Text>
       </Box>
 
@@ -140,12 +154,20 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
         }</Text></Text>
       </Box>
 
+      {multiSelect && (
+        <Box width={terminalWidth} paddingX={1}>
+          <Text color="green">
+            Selected: {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''}
+          </Text>
+        </Box>
+      )}
+
       {error ? (
         <Box width={terminalWidth} paddingX={1}>
           <Text color="red" wrap="truncate">{error}</Text>
         </Box>
       ) : (
-        <Box height={terminalHeight - 10} paddingX={1}>
+        <Box height={terminalHeight - (multiSelect ? 11 : 10)} paddingX={1}>
           {/* Split view with files on left and preview on right */}
           <Box flexDirection="row" width={terminalWidth - 2}>
             {/* File list panel */}
@@ -170,7 +192,11 @@ const FileExplorerContent = ({ mode = 'browse' }) => {
       )}
 
       <Box marginTop={1} width={terminalWidth}>
-        <NavigationHelp width={terminalWidth} showPickOption={mode === 'browse'} />
+        <NavigationHelp
+          width={terminalWidth}
+          showPickOption={mode === 'browse'}
+          showMultiSelectOption={multiSelect}
+        />
       </Box>
     </Box>
   );
@@ -180,11 +206,17 @@ const FileExplorer = ({
   initialPath,
   onBack,
   onFileSelect,
-  mode = 'browse' // 'browse' or 'picker'
+  mode = 'browse', // 'browse' or 'picker'
+  multiSelect = false
 }) => {
   return (
-    <FileExplorerProvider initialPath={initialPath} onFileSelect={onFileSelect} onBack={onBack}>
-      <FileExplorerContent mode={mode} />
+    <FileExplorerProvider
+      initialPath={initialPath}
+      onFileSelect={onFileSelect}
+      onBack={onBack}
+      multiSelect={multiSelect}
+    >
+      <FileExplorerContent mode={mode} multiSelect={multiSelect} />
     </FileExplorerProvider>
   );
 };

@@ -1,4 +1,4 @@
-// contexts/ChatContext.js
+// contexts/ChatContext.js - Updated for multiselect file handling
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ChatContext = createContext();
@@ -50,35 +50,72 @@ export const ChatProvider = ({ children, onBack }) => {
 
   // New state for file explorer
   const [showFileExplorer, setShowFileExplorer] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
 
   const activeRoom = rooms.find(room => room.id === activeRoomId) || rooms[0];
 
-  // Handle file selection from explorer
-  const handleFileSelect = (file) => {
-    setSelectedFile(file);
+  // Updated to handle multiple file selection
+  const handleFileSelect = (files) => {
     setShowFileExplorer(false);
 
-    // Send a message with the file info
-    const fileMessage = {
-      id: `${activeRoomId}-msg-${Date.now()}`,
-      user: 'You',
-      text: `📎 Shared file: ${file.name} (${file.size} bytes)`,
-      timestamp: new Date(),
-      attachedFile: file
-    };
+    // If files is an array (multiselect) vs single file object
+    const filesArray = Array.isArray(files) ? files : [files];
 
-    const updatedRooms = rooms.map(room => {
-      if (room.id === activeRoomId) {
-        return {
-          ...room,
-          messages: [...room.messages, fileMessage]
-        };
-      }
-      return room;
-    });
+    if (filesArray.length === 0) return;
 
-    setRooms(updatedRooms);
+    if (filesArray.length === 1) {
+      // Single file message
+      const file = filesArray[0];
+      const fileMessage = {
+        id: `${activeRoomId}-msg-${Date.now()}`,
+        user: 'You',
+        text: `📎 Shared file: ${file.name} (${file.size} bytes)`,
+        timestamp: new Date(),
+        attachedFile: file
+      };
+
+      const updatedRooms = rooms.map(room => {
+        if (room.id === activeRoomId) {
+          return {
+            ...room,
+            messages: [...room.messages, fileMessage]
+          };
+        }
+        return room;
+      });
+
+      setRooms(updatedRooms);
+    } else {
+      // Multiple files message
+      const totalSize = filesArray.reduce((sum, file) => sum + file.size, 0);
+
+      const fileMessage = {
+        id: `${activeRoomId}-msg-${Date.now()}`,
+        user: 'You',
+        text: `📎 Shared ${filesArray.length} files (${Math.round(totalSize / 1024)} KB total)`,
+        timestamp: new Date(),
+        attachedFiles: filesArray
+      };
+
+      // Add individual file details as separate lines in the message
+      let detailedMessage = fileMessage.text + '\n';
+      filesArray.forEach((file, index) => {
+        detailedMessage += `\n${index + 1}. ${file.name} (${file.size} bytes)`;
+      });
+
+      fileMessage.text = detailedMessage;
+
+      const updatedRooms = rooms.map(room => {
+        if (room.id === activeRoomId) {
+          return {
+            ...room,
+            messages: [...room.messages, fileMessage]
+          };
+        }
+        return room;
+      });
+
+      setRooms(updatedRooms);
+    }
   };
 
   const sendMessage = (text) => {
