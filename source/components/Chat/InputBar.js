@@ -1,4 +1,4 @@
-// components/Chat/InputBar.js
+// components/Chat/InputBar.js - Enhanced for multiline input
 import React from 'react';
 import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
@@ -12,6 +12,17 @@ const InputBar = ({ width = 100, isFocused = false }) => {
     setInputValue,
     handleInputSubmit
   } = useChat();
+
+  // Split multiline input for display
+  const displayLines = inputValue.split('\n');
+  const displayValue = displayLines.length > 1
+    ? `${displayLines[0]}... (${displayLines.length} lines)`
+    : inputValue;
+
+  const handleChange = (value) => {
+    // Allow pasted text with newlines
+    setInputValue(value);
+  };
 
   return (
     <Box
@@ -31,12 +42,12 @@ const InputBar = ({ width = 100, isFocused = false }) => {
       <Box width="100%" flexGrow={1} alignItems="center" justifyContent="flex-start">
         {inputMode ? (
           <TextInput
-            value={inputValue}
-            onChange={setInputValue}
+            value={displayValue}
+            onChange={handleChange}
             onSubmit={handleInputSubmit}
           />
         ) : (
-          <Text color="gray">Press Enter to type</Text>
+          <Text color="gray">Press Enter to type (paste supported)</Text>
         )}
       </Box>
       <Box width={30} alignItems="center" justifyContent="center">

@@ -1,18 +1,18 @@
-// contexts/ChatContext.js
+// contexts/ChatContext.js - Update to handle multiline messages
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ChatContext = createContext();
 
 export const useChat = () => useContext(ChatContext);
 
-// Mock data for demo
+// Mock data for demo with multiline messages
 const MOCK_ROOMS = [
   { id: '1', name: 'General', messages: [], users: ['Alice', 'Bob', 'Charlie'] },
   { id: '2', name: 'Support', messages: [], users: ['Dave', 'Eve', 'Support Bot'] },
   { id: '3', name: 'Random', messages: [], users: ['Frank', 'Grace', 'Heidi'] },
 ];
 
-// Generate some mock messages
+// Generate some mock messages including multiline ones
 MOCK_ROOMS.forEach(room => {
   const users = [...room.users];
   const messageCount = 10 + Math.floor(Math.random() * 20);
@@ -21,10 +21,21 @@ MOCK_ROOMS.forEach(room => {
     const user = users[Math.floor(Math.random() * users.length)];
     const timestamp = new Date(Date.now() - (messageCount - i) * 1000 * 60 * 5);
 
+    // Make some messages multiline
+    let messageText;
+    if (i % 5 === 0) {
+      messageText = `This is a multiline message from ${user}.\nIt contains several paragraphs.\nEach paragraph is on its own line.\nThis demonstrates the multiline capability.`;
+    } else if (i % 7 === 0) {
+      // Create a message with a really long line that needs wrapping
+      messageText = `This is a really long message that should wrap properly when displayed in the terminal. It's important that our chat app can handle these types of messages gracefully without breaking the UI layout. Users often paste content from other sources that contains long lines.`;
+    } else {
+      messageText = `This is a message from ${user} in ${room.name} room. Message #${i + 1}`;
+    }
+
     room.messages.push({
       id: `${room.id}-msg-${i}`,
       user,
-      text: `This is a message from ${user} in ${room.name} room. Message #${i + 1}`,
+      text: messageText,
       timestamp
     });
   }
@@ -93,7 +104,35 @@ export const ChatProvider = ({ children, onBack }) => {
       setInputValue('');
       return true;
     } else if (focusedPanel === 'messages' || focusedPanel === 'input') {
-      sendMessage(inputValue);
+      // Check if input is too long and would overflow UI
+      const lines = inputValue.split('\n');
+      const isTooLong = lines.length > 500 || inputValue.length > 10000;
+
+      if (isTooLong) {
+        // Add a warning message instead
+        const warningMessage = {
+          id: `${activeRoomId}-msg-${Date.now()}`,
+          user: 'System',
+          text: `Message too long (${lines.length} lines, ${inputValue.length} characters). Please send smaller messages.`,
+          timestamp: new Date()
+        };
+
+        const updatedRooms = rooms.map(room => {
+          if (room.id === activeRoomId) {
+            return {
+              ...room,
+              messages: [...room.messages, warningMessage]
+            };
+          }
+          return room;
+        });
+
+        setRooms(updatedRooms);
+      } else {
+        sendMessage(inputValue);
+      }
+
+      setInputValue('');
       return true;
     }
     return false;

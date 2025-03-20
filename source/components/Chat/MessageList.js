@@ -8,74 +8,113 @@ const formatTime = (timestamp) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-// Pre-calculate line chunks to avoid doing it during render
-const getTextChunks = (text, maxLength) => {
-  return text.split('\n').map(line => {
-    const chunks = [];
-    for (let i = 0; i < line.length; i += maxLength) {
-      chunks.push(line.substring(i, i + maxLength));
+// Safely truncate text to fit within width
+const fitTextToWidth = (text, maxWidth) => {
+  if (!text) return '';
+  if (text.length <= maxWidth) return text;
+  return text.substring(0, maxWidth - 3) + '...';
+};
+
+// Split long message text into lines that fit within available width
+const prepareMessageLines = (text, maxWidth) => {
+  if (!text) return [];
+
+  // First split by natural line breaks
+  const naturalLines = text.split('\n');
+  const result = [];
+
+  // Then ensure each line fits within maxWidth
+  naturalLines.forEach(line => {
+    // Simple wrapping for lines longer than maxWidth
+    for (let i = 0; i < line.length; i += maxWidth) {
+      const chunk = line.substring(i, i + maxWidth);
+      result.push(chunk);
     }
-    return chunks;
   });
+
+  return result;
 };
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const { activeRoom } = useChat();
-  const [scrollPosition, setScrollPosition] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const messages = activeRoom.messages || [];
 
-  // Calculate available height for messages
-  const availableHeight = height - 6; // Account for header, indicators, and padding
+  // Calculate available width and height
+  const contentWidth = Math.max(20, width - 6); // Adjust for borders and padding
+  const availableHeight = Math.max(5, height - 6); // Account for header and padding
 
-  // Sort messages by timestamp
+  // Sort messages by timestamp (oldest first)
   const sortedMessages = [...messages].sort((a, b) =>
     new Date(a.timestamp) - new Date(b.timestamp)
   );
 
-  // Keep track of previous message count to detect new messages
-  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
+  // Process messages into display lines
+  const processedLines = [];
+  sortedMessages.forEach(message => {
+    // Add header line
+    processedLines.push({
+      type: 'header',
+      user: message.user,
+      timestamp: message.timestamp,
+      messageId: message.id
+    });
 
-  // Simple fixed-height approach to avoid infinite loops
-  const messagesPerPage = Math.max(1, Math.floor(availableHeight / 3)); // Assume each message takes ~3 lines
-  const totalPages = Math.ceil(sortedMessages.length / messagesPerPage);
+    // Process message content into lines that fit within width
+    const contentLines = prepareMessageLines(message.text, contentWidth);
+    contentLines.forEach((line, idx) => {
+      processedLines.push({
+        type: 'content',
+        text: line,
+        messageId: message.id,
+        lineIndex: idx
+      });
+    });
+  });
+
+  const totalLines = processedLines.length;
+  const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    const isAtBottom = scrollPosition === 0;
+    const isAtBottom = scrollOffset === 0;
     const hasNewMessages = messages.length > prevMessageCount;
 
     if ((isAtBottom && hasNewMessages) || messages.length === 1) {
-      setScrollPosition(0);
+      setScrollOffset(0);
     }
 
     setPrevMessageCount(messages.length);
-  }, [messages.length, prevMessageCount]);
+  }, [messages.length]);
+
+  // Keep track of previous message count
+  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
 
   // Handle keyboard navigation
   useInput((input, key) => {
     if (!isFocused) return;
 
     if (key.upArrow) {
-      setScrollPosition(prev => Math.min(totalPages - 1, prev + 1));
+      setScrollOffset(prev => Math.min(maxScrollOffset, prev + 1));
     } else if (key.downArrow) {
-      setScrollPosition(prev => Math.max(0, prev - 1));
+      setScrollOffset(prev => Math.max(0, prev - 1));
     } else if (key.pageUp) {
-      setScrollPosition(prev => Math.min(totalPages - 1, prev + 3));
+      setScrollOffset(prev => Math.min(maxScrollOffset, prev + Math.floor(availableHeight / 2)));
     } else if (key.pageDown) {
-      setScrollPosition(prev => Math.max(0, prev - 3));
+      setScrollOffset(prev => Math.max(0, prev - Math.floor(availableHeight / 2)));
     } else if (input === 'g') {
       // Go to top (oldest messages)
-      setScrollPosition(totalPages - 1);
+      setScrollOffset(maxScrollOffset);
     } else if (input === 'G') {
       // Go to bottom (newest messages)
-      setScrollPosition(0);
+      setScrollOffset(0);
     }
   });
 
-  // Get visible messages based on current scroll position
-  const startIdx = Math.max(0, sortedMessages.length - ((scrollPosition + 1) * messagesPerPage));
-  const endIdx = Math.min(sortedMessages.length, startIdx + messagesPerPage);
-  const visibleMessages = sortedMessages.slice(startIdx, endIdx);
+  // Get visible lines based on current scroll offset
+  const visibleStartIndex = Math.max(0, totalLines - availableHeight - scrollOffset);
+  const visibleEndIndex = Math.min(totalLines, visibleStartIndex + availableHeight);
+  const visibleLines = processedLines.slice(visibleStartIndex, visibleEndIndex);
 
   return (
     <Box
@@ -87,8 +126,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       padding={1}
     >
       <Box marginBottom={1}>
-        <Text bold underline wrap="truncate">
-          Messages
+        <Text bold wrap="truncate">
+          Messages {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
         </Text>
       </Box>
 
@@ -99,51 +138,43 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
           </Text>
         </Box>
       ) : (
-        <Box flexDirection="column" height={height - 4}>
-          {/* Scroll indicators */}
-          {scrollPosition < totalPages - 1 && startIdx > 0 && (
-            <Box width={width - 4}>
-              <Text color="yellow">
-                ↑ {startIdx} more message(s)
-              </Text>
-            </Box>
-          )}
-
-          {/* Message list */}
-          <Box flexDirection="column" height={availableHeight}>
-            {visibleMessages.map((message) => (
-              <Box key={message.id} flexDirection="column" marginBottom={1}>
-                {/* Username and timestamp header */}
-                <Box width={width - 6}>
-                  <Text color="blue" bold>{message.user}</Text>
-                  <Text> </Text>
-                  <Text color="gray">{formatTime(message.timestamp)}</Text>
-                </Box>
-
-                {/* Message content */}
-                <Box width={width - 6} flexDirection="column">
-                  {message.text.split('\n').map((line, lineIdx) => {
-                    // Simple line truncation to avoid recursion issues
-                    const maxLineLength = width - 8;
-                    return (
-                      <Box key={`${message.id}-line-${lineIdx}`} width={width - 6}>
-                        <Text wrap="truncate">{line}</Text>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              </Box>
-            ))}
+        <Box
+          flexDirection="column"
+          height={availableHeight}
+        >
+          {/* Message lines */}
+          <Box overflow={"hidden"} flexDirection="column">
+            {visibleLines.map((line, idx) => {
+              if (line.type === 'header') {
+                return (
+                  <Box key={`h-${line.messageId}-${idx}`} width={contentWidth}>
+                    <Text color="blue" bold>{line.user}</Text>
+                    <Text> </Text>
+                    <Text color="gray">{formatTime(line.timestamp)}</Text>
+                  </Box>
+                );
+              } else {
+                return (
+                  <Box key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
+                    <Text>{line.text}</Text>
+                  </Box>
+                );
+              }
+            })}
           </Box>
+        </Box>
+      )}
 
-          {/* Bottom indicator */}
-          {scrollPosition > 0 && endIdx < sortedMessages.length && (
-            <Box width={width - 4}>
-              <Text color="yellow">
-                ↓ {sortedMessages.length - endIdx} more message(s)
-              </Text>
-            </Box>
-          )}
+      {/* Scroll indicators - small and positioned strategically */}
+      {scrollOffset > 0 && (
+        <Box position="absolute" right={2} top={1}>
+          <Text color="yellow" bold>↑{scrollOffset}</Text>
+        </Box>
+      )}
+
+      {scrollOffset < maxScrollOffset && (
+        <Box position="absolute" right={2} bottom={1}>
+          <Text color="yellow" bold>↓</Text>
         </Box>
       )}
     </Box>
