@@ -25,10 +25,13 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
   const availableWidth = Math.max(60, width);
   const roomListWidth = Math.max(15, Math.floor(availableWidth * 0.15));
   const userListWidth = Math.max(15, Math.floor(availableWidth * 0.20));
-  const messageListWidth = availableWidth - roomListWidth - userListWidth;
+  const messageListWidth = availableWidth - roomListWidth - userListWidth - 4; // Subtract borders
 
   // Calculate heights
-  const contentHeight = Math.max(10, height - 6); // Reserve space for top and bottom bars
+  const topBarHeight = 3;
+  const bottomHelpHeight = 1;
+  const inputBarHeight = 3;
+  const contentHeight = Math.max(10, height - topBarHeight - bottomHelpHeight - inputBarHeight - 2);
 
   useInput((input, key) => {
     // Global escape key handling
@@ -99,10 +102,18 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
   });
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+    >
       <TopBar width={width} />
 
-      <Box flexDirection="row" height={contentHeight}>
+      <Box
+        flexDirection="row"
+        height={contentHeight}
+        width={width}
+      >
         <RoomList
           width={roomListWidth}
           height={contentHeight}
@@ -128,7 +139,7 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
         value={inputValue}
       />
 
-      <Box width={width}>
+      <Box width={width} height={bottomHelpHeight}>
         <Text dimColor>
           [Tab] Switch panels | [Enter] Focus input | [Esc] Back/Exit |
           {focusedPanel === 'rooms' && ' [a] Add room | '}

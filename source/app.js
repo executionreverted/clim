@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import Welcome from './components/Welcome.js';
 import FileExplorer from './components/FileExplorer/index.js';
-import Chat from './components/chat/index.js';
+import Chat from './components/Chat/index.js';
 
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
@@ -40,7 +40,7 @@ const App = () => {
     >
       {currentPage === 'welcome' && (
         <Welcome
-          onStart={() => setCurrentPage('explorer')}
+          onStart={(w) => setCurrentPage(w)}
           width={terminalWidth}
           height={terminalHeight}
         />
