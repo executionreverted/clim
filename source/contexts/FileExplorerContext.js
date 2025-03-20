@@ -92,7 +92,7 @@ export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBa
     if (file) {
       try {
         // This will be implemented with the 'open' package in the actual component
-        console.log(`Opening file: ${file.path}`);
+        open(file.path)
         // We'll implement this with dynamic import in the component
       } catch (err) {
         setError(`Failed to open file: ${err.message}`);
