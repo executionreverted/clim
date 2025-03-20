@@ -158,7 +158,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
               } else {
                 return (
                   <Box overflow="hidden" key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
+                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text).replace('␍', '\n')}</Text>
                   </Box>
                 );
               }
