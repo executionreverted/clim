@@ -45,6 +45,7 @@ const InputBar = ({ width = 100, isFocused = false }) => {
             value={displayValue}
             onChange={handleChange}
             onSubmit={handleInputSubmit}
+            focus={inputMode} // Ensure focus when in input mode
           />
         ) : (
           <Text color="gray">Press Enter to type (paste supported)</Text>

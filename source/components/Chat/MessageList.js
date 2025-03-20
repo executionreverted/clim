@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
+import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
@@ -27,7 +28,7 @@ const prepareMessageLines = (text, maxWidth) => {
   naturalLines.forEach(line => {
     // Simple wrapping for lines longer than maxWidth
     for (let i = 0; i < line.length; i += maxWidth) {
-      const chunk = line.substring(i, i + maxWidth);
+      const chunk = line.substring(i, i + maxWidth).trim();
       result.push(chunk);
     }
   });
@@ -36,7 +37,7 @@ const prepareMessageLines = (text, maxWidth) => {
 };
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
-  const { activeRoom } = useChat();
+  const { activeRoom, inputMode } = useChat();
   const [scrollOffset, setScrollOffset] = useState(0);
   const messages = activeRoom.messages || [];
 
@@ -94,8 +95,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
 
   // Handle keyboard navigation
   useInput((input, key) => {
-    if (!isFocused) return;
-
+    if (!isFocused || inputMode) return;
     if (key.upArrow) {
       setScrollOffset(prev => Math.min(maxScrollOffset, prev + 1));
     } else if (key.downArrow) {
@@ -149,7 +149,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
             {visibleLines.map((line, idx) => {
               if (line.type === 'header') {
                 return (
-                  <Box key={`h-${line.messageId}-${idx}`} width={contentWidth}>
+                  <Box overflow={"hidden"} key={`h-${line.messageId}-${idx}`} width={contentWidth}>
                     <Text color="blue" bold>{line.user}</Text>
                     <Text> </Text>
                     <Text color="gray">{formatTime(line.timestamp)}</Text>
@@ -157,8 +157,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
                 );
               } else {
                 return (
-                  <Box key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text color={line.isFileMessage ? "green" : undefined}>{line.text}</Text>
+                  <Box overflow="hidden" key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
+                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
                   </Box>
                 );
               }
