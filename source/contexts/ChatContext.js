@@ -1,4 +1,4 @@
-// contexts/ChatContext.js - Update to handle multiline messages
+// contexts/ChatContext.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const ChatContext = createContext();
@@ -48,7 +48,38 @@ export const ChatProvider = ({ children, onBack }) => {
   const [focusedPanel, setFocusedPanel] = useState('messages'); // 'rooms', 'messages', 'users', 'input'
   const [inputMode, setInputMode] = useState(false);
 
+  // New state for file explorer
+  const [showFileExplorer, setShowFileExplorer] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+
   const activeRoom = rooms.find(room => room.id === activeRoomId) || rooms[0];
+
+  // Handle file selection from explorer
+  const handleFileSelect = (file) => {
+    setSelectedFile(file);
+    setShowFileExplorer(false);
+
+    // Send a message with the file info
+    const fileMessage = {
+      id: `${activeRoomId}-msg-${Date.now()}`,
+      user: 'You',
+      text: `📎 Shared file: ${file.name} (${file.size} bytes)`,
+      timestamp: new Date(),
+      attachedFile: file
+    };
+
+    const updatedRooms = rooms.map(room => {
+      if (room.id === activeRoomId) {
+        return {
+          ...room,
+          messages: [...room.messages, fileMessage]
+        };
+      }
+      return room;
+    });
+
+    setRooms(updatedRooms);
+  };
 
   const sendMessage = (text) => {
     if (!text.trim()) return;
@@ -88,7 +119,20 @@ export const ChatProvider = ({ children, onBack }) => {
     setActiveRoomId(newRoom.id);
   };
 
-  const handleKeyInput = (input) => {
+  const handleKeyInput = (input, key) => {
+    // Check for /send command
+    if (inputValue.trim() === '/send' && (focusedPanel === 'input' || focusedPanel === 'messages')) {
+      setInputValue('');
+      setShowFileExplorer(true);
+      return true;
+    }
+
+    // Check for Shift+T key combination
+    if (key && key.shift && input === 'T') {
+      setShowFileExplorer(true);
+      return true;
+    }
+
     if (focusedPanel === 'rooms' && input === 'a') {
       setInputMode(true);
       setInputValue('');
@@ -104,6 +148,13 @@ export const ChatProvider = ({ children, onBack }) => {
       setInputValue('');
       return true;
     } else if (focusedPanel === 'messages' || focusedPanel === 'input') {
+      // Check for /send command
+      if (inputValue.trim() === '/send') {
+        setInputValue('');
+        setShowFileExplorer(true);
+        return true;
+      }
+
       // Check if input is too long and would overflow UI
       const lines = inputValue.split('\n');
       const isTooLong = lines.length > 500 || inputValue.length > 10000;
@@ -155,6 +206,9 @@ export const ChatProvider = ({ children, onBack }) => {
         createRoom,
         handleKeyInput,
         handleInputSubmit,
+        showFileExplorer,
+        setShowFileExplorer,
+        handleFileSelect,
         onBack
       }}
     >

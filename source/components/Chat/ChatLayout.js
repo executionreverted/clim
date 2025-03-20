@@ -34,6 +34,11 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
   const contentHeight = Math.max(10, height - topBarHeight - bottomHelpHeight - inputBarHeight - 2);
 
   useInput((input, key) => {
+    // First, check for custom key handlers (like Shift+T or /send)
+    if (handleKeyInput(input, key)) {
+      return;
+    }
+
     // Global escape key handling
     if (key.escape) {
       if (inputMode) {
@@ -91,14 +96,6 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
 
       return;
     }
-
-    // Handle panel-specific key inputs when not in input mode
-    if (!inputMode) {
-      // Let the panel handle its own inputs
-      if (handleKeyInput(input)) {
-        return;
-      }
-    }
   });
 
   return (
@@ -143,7 +140,7 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
         <Text dimColor>
           [Tab] Switch panels | [Enter] Focus input | [Esc] Back/Exit |
           {focusedPanel === 'rooms' && ' [a] Add room | '}
-          Press ENTER to chat
+          [Shift+T] or /send: Share file | Press ENTER to chat
         </Text>
       </Box>
     </Box>

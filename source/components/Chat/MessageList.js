@@ -67,7 +67,9 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
         type: 'content',
         text: line,
         messageId: message.id,
-        lineIndex: idx
+        lineIndex: idx,
+        hasAttachment: !!message.attachedFile,
+        isFileMessage: message.text && message.text.startsWith('📎')
       });
     });
   });
@@ -156,7 +158,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
               } else {
                 return (
                   <Box key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text>{line.text}</Text>
+                    <Text color={line.isFileMessage ? "green" : undefined}>{line.text}</Text>
                   </Box>
                 );
               }
