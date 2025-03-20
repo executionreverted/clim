@@ -3,7 +3,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 
-const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, width = 40 }) => {
+const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, width }) => {
   // Adjust filename length based on available width
   const MAX_FILENAME_LENGTH = Math.max(10, Math.floor(width * 0.6));
 
@@ -38,6 +38,13 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
       borderColor="gray"
       padding={1}
     >
+      {/* Parent directory navigation option */}
+      <Box width={width - 4}>
+        <Text color="blue" wrap="truncate">
+          {selectedIndex === -1 ? '>' : ' '} 📁 ...
+        </Text>
+      </Box>
+
       {files.length === 0 ? (
         <Box width={width - 4}>
           <Text color="yellow" wrap="truncate">This directory is empty</Text>
@@ -67,7 +74,5 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
     </Box>
   );
 };
-
-export default FileList;
 
 export default FileList;

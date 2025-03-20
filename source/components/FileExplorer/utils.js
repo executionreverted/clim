@@ -83,3 +83,17 @@ export const sanitizeTextForTerminal = (text) => {
     // Replace unicode "replacement character" that appears for invalid sequences
     .replace(/\uFFFD/g, '�');
 };
+
+/**
+ * Calculate optimal panel dimensions based on terminal width
+ * @param {number} terminalWidth - Total width of terminal
+ * @returns {Object} - Object with calculated dimensions for panels
+ */
+export const calculatePanelDimensions = (terminalWidth) => {
+  const availableWidth = terminalWidth - 6; // Account for borders and margins
+
+  return {
+    listWidth: Math.floor(availableWidth * 0.45),
+    previewWidth: Math.floor(availableWidth * 0.45)
+  };
+};

@@ -4,25 +4,21 @@ import { Box, Text, useInput } from 'ink';
 import fs from 'fs';
 import mime from 'mime-types';
 import { filesize } from 'filesize';
-import { sanitizeTextForTerminal } from './utils.js';
-
-const MAX_PREVIEW_LINES = 10;
+import { sanitizeTextForTerminal, isTextFile } from './utils.js';
 
 const FilePreview = ({
   selectedFile,
   previewScrollOffset,
   setPreviewScrollOffset,
-  width = 40,
-  maxPreviewLines = MAX_PREVIEW_LINES
+  width,
+  maxPreviewLines
 }) => {
-
   // Handle preview scrolling
   useInput((input, key) => {
     if (!selectedFile || selectedFile.isDirectory) return;
 
     const mimeType = mime.lookup(selectedFile.path) || '';
-    const isText = mimeType.startsWith('text/') ||
-      ['application/json', 'application/javascript', 'application/xml'].includes(mimeType);
+    const isText = isTextFile(mimeType);
 
     if (!isText) return;
 
@@ -36,7 +32,7 @@ const FilePreview = ({
       } else if (key.ctrl && key.downArrow) {
         // Scroll preview down
         setPreviewScrollOffset(Math.min(
-          Math.max(0, totalLines - MAX_PREVIEW_LINES),
+          Math.max(0, totalLines - maxPreviewLines),
           previewScrollOffset + 1
         ));
       }
@@ -79,31 +75,12 @@ const FilePreview = ({
             </Box>
           )}
 
-          {/* Use super-safe rendering for each line */}
           {visibleLines.map((line, i) => {
-            // Convert each character to its literal representation to avoid any escape sequence issues
-            const safeChars = [];
-            for (let j = 0; j < line.length && j < PREVIEW_MAX_WIDTH - 3; j++) {
-              const char = line[j];
-              // Only allow a limited set of safe characters to be displayed directly
-              if (
-                (char >= 'a' && char <= 'z') ||
-                (char >= 'A' && char <= 'Z') ||
-                (char >= '0' && char <= '9') ||
-                ' .,;:!?()[]{}<>+-*/=_@#$%^&'.includes(char)
-              ) {
-                safeChars.push(char);
-              } else {
-                // For any other character, just show a placeholder
-                safeChars.push('·');
-              }
-            }
-
-            // Create a safe string, truncated with ellipsis if needed
-            const safeStr = safeChars.join('');
-            const displayStr = line.length > PREVIEW_MAX_WIDTH - 3
-              ? safeStr + '...'
-              : safeStr;
+            // Sanitize and truncate each line
+            const sanitizedLine = sanitizeTextForTerminal(line);
+            const displayStr = sanitizedLine.length > PREVIEW_MAX_WIDTH - 3
+              ? sanitizedLine.substring(0, PREVIEW_MAX_WIDTH - 3) + '...'
+              : sanitizedLine;
 
             return (
               <Box key={i} width={PREVIEW_MAX_WIDTH}>
@@ -129,20 +106,18 @@ const FilePreview = ({
   };
 
   const renderImagePreview = (file) => {
-    const PREVIEW_MAX_WIDTH = 40;
-
     return (
       <Box flexDirection="column">
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text bold color="magenta" wrap="truncate">[Image File]</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Type: {mime.lookup(file.path) || 'Unknown'}</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Size: {filesize(file.size)}</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Modified: {file.mtime.toLocaleString()}</Text>
         </Box>
       </Box>
@@ -150,20 +125,18 @@ const FilePreview = ({
   };
 
   const renderBinaryPreview = (file) => {
-    const PREVIEW_MAX_WIDTH = 40;
-
     return (
       <Box flexDirection="column">
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text bold color="yellow" wrap="truncate">[Binary File]</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Type: {mime.lookup(file.path) || 'Unknown'}</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Size: {filesize(file.size)}</Text>
         </Box>
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text wrap="truncate">Modified: {file.mtime.toLocaleString()}</Text>
         </Box>
       </Box>
@@ -171,26 +144,24 @@ const FilePreview = ({
   };
 
   const renderDirectoryPreview = (file) => {
-    const PREVIEW_MAX_WIDTH = 40;
-
     try {
       const itemCount = fs.readdirSync(file.path).length;
       return (
         <Box flexDirection="column">
-          <Box width={PREVIEW_MAX_WIDTH}>
+          <Box width={width - 8}>
             <Text color="blue" wrap="truncate">[Directory]</Text>
           </Box>
-          <Box width={PREVIEW_MAX_WIDTH}>
+          <Box width={width - 8}>
             <Text wrap="truncate">Contains {itemCount} items</Text>
           </Box>
-          <Box width={PREVIEW_MAX_WIDTH}>
+          <Box width={width - 8}>
             <Text wrap="truncate">Modified: {file.mtime.toLocaleString()}</Text>
           </Box>
         </Box>
       );
     } catch (err) {
       return (
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text color="red" wrap="truncate">Error reading directory</Text>
         </Box>
       );
@@ -198,11 +169,9 @@ const FilePreview = ({
   };
 
   const renderFileContent = (file) => {
-    const PREVIEW_MAX_WIDTH = 40;
-
     if (!file) {
       return (
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text color="gray" wrap="truncate">Select a file to preview</Text>
         </Box>
       );
@@ -214,8 +183,7 @@ const FilePreview = ({
 
     try {
       const mimeType = mime.lookup(file.path) || '';
-      const isText = mimeType.startsWith('text/') ||
-        ['application/json', 'application/javascript', 'application/xml'].includes(mimeType);
+      const isText = isTextFile(mimeType);
 
       if (isText) {
         return renderTextPreview(file);
@@ -226,7 +194,7 @@ const FilePreview = ({
       }
     } catch (err) {
       return (
-        <Box width={PREVIEW_MAX_WIDTH}>
+        <Box width={width - 8}>
           <Text color="red" wrap="truncate">Error: {err.message}</Text>
         </Box>
       );
@@ -236,25 +204,27 @@ const FilePreview = ({
   return (
     <Box
       flexDirection="column"
-      width={40} // Smaller fixed width in characters
+      width={width}
       borderStyle="single"
       borderColor="gray"
       padding={1}
       marginLeft={1}
     >
-      <Box width={35}>
+      <Box width={width - 4}>
         <Text bold color="cyan" wrap="truncate">Preview</Text>
       </Box>
 
       {selectedFile && (
-        <Box width={35}>
+        <Box width={width - 4}>
           <Text bold wrap="truncate">
-            {selectedFile.name.length > 25 ? selectedFile.name.substring(0, 22) + '...' : selectedFile.name}
+            {selectedFile.name.length > width - 10
+              ? selectedFile.name.substring(0, width - 13) + '...'
+              : selectedFile.name}
           </Text>
         </Box>
       )}
 
-      <Box flexDirection="column" width={35}>
+      <Box flexDirection="column" width={width - 4}>
         {renderFileContent(selectedFile)}
       </Box>
     </Box>

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-const NavigationHelp = ({ width = 80 }) => {
+const NavigationHelp = ({ width }) => {
   return (
     <Box
       width={width}
@@ -16,7 +16,7 @@ const NavigationHelp = ({ width = 80 }) => {
           <Text color="green">↑/↓</Text>: Navigate |
           <Text color="green"> PgUp/PgDn</Text>: Jump |
           <Text color="green"> ENTER</Text>: Open dir |
-          <Text color="green"> h</Text>: Parent dir |
+          <Text color="green"> BACKSPACE/h</Text>: Parent dir |
           <Text color="green"> b</Text>: Back
         </Text>
       </Box>

@@ -1,7 +1,6 @@
 // components/FileExplorer/index.js
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
-import fs from 'fs';
 import path from 'path';
 
 import FileList from './FileList.js';
@@ -10,7 +9,6 @@ import NavigationHelp from './NavigationHelp.js';
 import { loadDirectory } from './utils.js';
 
 const FileExplorer = ({ onBack }) => {
-
   const { stdout } = useStdout();
   const [terminalWidth, setTerminalWidth] = useState(stdout.columns || 100);
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
@@ -22,8 +20,8 @@ const FileExplorer = ({ onBack }) => {
   const [previewScrollOffset, setPreviewScrollOffset] = useState(0);
 
   // Calculate maximum visible files based on terminal height
-  // Subtract 6 for header, borders and help footer
-  const MAX_VISIBLE_FILES = Math.max(5, terminalHeight - 8);
+  // Subtract 8 for header, borders and help footer
+  const MAX_VISIBLE_FILES = Math.max(5, terminalHeight - 10);
 
   // Update terminal dimensions if they change
   useEffect(() => {
@@ -64,12 +62,13 @@ const FileExplorer = ({ onBack }) => {
   // Handle file list navigation
   useInput((input, key) => {
     if (key.upArrow) {
-      const newIndex = Math.max(0, selectedIndex - 1);
+      // Allow selection to go to -1 for the parent directory option
+      const newIndex = Math.max(-1, selectedIndex - 1);
       setSelectedIndex(newIndex);
 
       // Update visible window if selection would go out of view
       if (newIndex < visibleStartIndex) {
-        setVisibleStartIndex(newIndex);
+        setVisibleStartIndex(Math.max(0, newIndex));
       }
     } else if (key.downArrow) {
       const newIndex = Math.min(files.length - 1, selectedIndex + 1);
@@ -81,7 +80,7 @@ const FileExplorer = ({ onBack }) => {
       }
     } else if (key.pageUp) {
       // Page up: move selection up by page size
-      const newIndex = Math.max(0, selectedIndex - MAX_VISIBLE_FILES);
+      const newIndex = Math.max(-1, selectedIndex - MAX_VISIBLE_FILES);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, newIndex - Math.floor(MAX_VISIBLE_FILES / 2)));
     } else if (key.pageDown) {
@@ -92,8 +91,11 @@ const FileExplorer = ({ onBack }) => {
         files.length - MAX_VISIBLE_FILES,
         newIndex - Math.floor(MAX_VISIBLE_FILES / 2)
       )));
-    } else if (key.return) {
-      if (files[selectedIndex]) {
+    } else if (key.delete) {
+      // If parent directory option is selected
+      if (selectedIndex === -1) {
+        navigateToParent();
+      } else if (files[selectedIndex]) {
         navigateToDirectory(files[selectedIndex]);
       }
     } else if (input === 'b') {
@@ -106,12 +108,15 @@ const FileExplorer = ({ onBack }) => {
   // Get the currently selected file
   const selectedFile = files[selectedIndex];
 
+  // Calculate proper panel widths based on terminal width
+  const listWidth = Math.floor((terminalWidth - 4) * 0.45);
+  const previewWidth = Math.floor((terminalWidth - 4) * 0.45);
+
   return (
     <Box
       flexDirection="column"
       width={terminalWidth}
       height={terminalHeight}
-      padding={0}
     >
       <Box width={terminalWidth} paddingX={1}>
         <Text bold wrap="truncate">File Explorer</Text>
@@ -130,16 +135,16 @@ const FileExplorer = ({ onBack }) => {
           <Text color="red" wrap="truncate">{error}</Text>
         </Box>
       ) : (
-        <Box height={terminalHeight - 6} paddingX={1}>
+        <Box height={terminalHeight - 8}>
           {/* Split view with files on left and preview on right */}
-          <Box flexDirection="row" width={terminalWidth - 2}>
+          <Box flexDirection="row" paddingX={1}>
             {/* File list panel */}
             <FileList
               files={files}
               selectedIndex={selectedIndex}
               visibleStartIndex={visibleStartIndex}
               maxVisibleFiles={MAX_VISIBLE_FILES}
-              width={Math.floor((terminalWidth - 4) * 0.5)}
+              width={listWidth}
             />
 
             {/* Preview panel */}
@@ -147,15 +152,15 @@ const FileExplorer = ({ onBack }) => {
               selectedFile={selectedFile}
               previewScrollOffset={previewScrollOffset}
               setPreviewScrollOffset={setPreviewScrollOffset}
-              width={Math.floor((terminalWidth - 4) * 0.5)}
+              width={previewWidth}
               maxPreviewLines={MAX_VISIBLE_FILES}
             />
           </Box>
         </Box>
       )}
 
-      <Box position="absolute" bottom={0} width={terminalWidth}>
-        <NavigationHelp width={terminalWidth} />
+      <Box paddingX={1} marginBottom={1}>
+        <NavigationHelp width={terminalWidth - 2} />
       </Box>
     </Box>
   );
