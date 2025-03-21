@@ -3,9 +3,15 @@ import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 import { useFileExplorer } from '../../contexts/FileExplorerContext.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 // Memoized file item component to prevent unnecessary re-renders
 const FileItem = memo(({ item, index, selectedIndex, multiSelect, selectedFiles, width, MAX_FILENAME_LENGTH }) => {
+  const {
+    secondaryColor,
+    textColor,
+    mutedTextColor,
+  } = useThemeUpdate().colors
   const isSelected = index === selectedIndex;
   const isCursorSelected = isSelected ? '>' : ' ';
   const icon = item.isDirectory ? '📁' : '📄';
@@ -29,33 +35,54 @@ const FileItem = memo(({ item, index, selectedIndex, multiSelect, selectedFiles,
 
   return (
     <Box width={width - 4}>
-      <Text color={isSelected ? 'green' : undefined} wrap="truncate">
+      <Text color={isSelected ? secondaryColor : textColor} wrap="truncate">
         {isCursorSelected} {multiSelect ? multiSelectIndicator : ''} {icon} {displayName}
-        <Text color="gray">{sizeText}</Text>
+        <Text color={mutedTextColor}>{sizeText}</Text>
       </Text>
     </Box>
   );
 });
 
 // Memoized parent directory option
-const ParentDirectoryItem = memo(({ selectedIndex, multiSelect, width }) => (
-  <Box width={width - 4}>
-    <Text color={selectedIndex === -1 ? 'green' : undefined} wrap="truncate">
+const ParentDirectoryItem = memo(({ selectedIndex, multiSelect, width }) => {
+  const {
+    primaryColor,
+    secondaryColor,
+    textColor,
+    mutedTextColor,
+    errorColor,
+    successColor,
+    warningColor,
+    infoColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate().colors
+  return <Box width={width - 4}>
+    <Text color={selectedIndex === -1 ? successColor : textColor} wrap="truncate">
       {selectedIndex === -1 ? '>' : ' '} {multiSelect ? '   ' : ''} 📁 ..
     </Text>
   </Box>
-));
+});
 
 // Memoized pagination indicator
-const PaginationIndicator = memo(({ direction, count, width }) => (
-  <Box width={width - 4}>
-    <Text color="yellow" wrap="truncate">
+const PaginationIndicator = memo(({ direction, count, width }) => {
+  const {
+    secondaryColor,
+  } = useThemeUpdate().colors;
+
+  return <Box width={width - 4}>
+    <Text color={secondaryColor} wrap="truncate">
       {direction === 'up' ? '↑ More items above' : `↓ More (${count})`}
     </Text>
   </Box>
-));
+});
 
 const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, width = 40 }) => {
+  const {
+    textColor,
+    borderColor,
+  } = useThemeUpdate().colors;
+
   // Get multiselect state from context
   const { multiSelect, selectedFiles } = useFileExplorer();
 
@@ -67,12 +94,12 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
       flexDirection="column"
       width={width}
       borderStyle="single"
-      borderColor="gray"
+      borderColor={borderColor}
       padding={1}
     >
       {files.length === 0 ? (
         <Box width={width - 4}>
-          <Text color="yellow" wrap="truncate">This directory is empty</Text>
+          <Text color={textColor} wrap="truncate">This directory is empty</Text>
         </Box>
       ) : (
         <>

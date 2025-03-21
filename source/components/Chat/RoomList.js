@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
   const {
@@ -13,7 +14,14 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
     inputMode,
     inputValue
   } = useChat();
-
+  const {
+    primaryColor,
+    secondaryColor,
+    mutedTextColor,
+    warningColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate().colors
   const [highlightedIndex, setHighlightedIndex] = useState(
     rooms.findIndex(room => room.id === activeRoomId) || 0
   );
@@ -75,7 +83,7 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
       width={width}
       height={height}
       borderStyle="single"
-      borderColor={isFocused ? "green" : "gray"}
+      borderColor={isFocused ? activeBorderColor : borderColor}
       flexDirection="column"
       padding={1}
     >
@@ -87,13 +95,13 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
 
       {isFocused && inputMode ? (
         <Box>
-          <Text color="yellow">New room: {inputValue || "Type name..."}</Text>
+          <Text color={warningColor}>New room: {inputValue || "Type name..."}</Text>
         </Box>
       ) : (
         <>
           {scrollOffset > 0 && (
             <Box>
-              <Text color="yellow">↑ More rooms</Text>
+              <Text color={secondaryColor}>↑ More rooms</Text>
             </Box>
           )}
 
@@ -104,7 +112,7 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
             return (
               <Box key={room.id}>
                 <Text
-                  color={isSelected ? "green" : undefined}
+                  color={isSelected ? secondaryColor : primaryColor}
                   bold={isSelected}
                   wrap="truncate"
                 >
@@ -116,13 +124,13 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
 
           {scrollOffset + maxVisibleItems < rooms.length && (
             <Box>
-              <Text color="yellow">↓ More rooms</Text>
+              <Text color={secondaryColor}>↓ More rooms</Text>
             </Box>
           )}
 
           {isFocused && (
             <Box marginTop={1}>
-              <Text color="gray" italic>
+              <Text color={mutedTextColor} italic>
                 Press '{addRoomKey}' to add room
               </Text>
             </Box>

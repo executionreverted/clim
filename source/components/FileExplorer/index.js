@@ -9,12 +9,17 @@ import useKeymap from '../../hooks/useKeymap.js';
 
 // Direct import for 'open' package
 import open from 'open';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
   const { stdout } = useStdout();
   const [terminalWidth, setTerminalWidth] = useState(stdout.columns || 100);
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
-
+  const {
+    errorColor,
+    successColor,
+    infoColor,
+  } = useThemeUpdate().colors;
   const {
     currentPath,
     files,
@@ -181,7 +186,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       </Box>
 
       <Box flexGrow={1} width={terminalWidth} paddingX={1}>
-        <Text wrap="truncate">Path: <Text color="blue">{
+        <Text wrap="truncate">Path: <Text color={infoColor}>{
           currentPath.length > terminalWidth - 10
             ? '...' + currentPath.substring(currentPath.length - (terminalWidth - 10))
             : currentPath
@@ -190,7 +195,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
 
       {multiSelect && (
         <Box width={terminalWidth} paddingX={1}>
-          <Text color="green">
+          <Text color={successColor}>
             Selected: {selectedFiles?.length || 0} file{(selectedFiles?.length || 0) !== 1 ? 's' : ''}
           </Text>
         </Box>
@@ -198,7 +203,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
 
       {error ? (
         <Box width={terminalWidth} paddingX={1}>
-          <Text color="red" wrap="truncate">{error}</Text>
+          <Text color={errorColor} wrap="truncate">{error}</Text>
         </Box>
       ) : (
         <Box height={terminalHeight - (multiSelect ? 11 : 10)} paddingX={1}>

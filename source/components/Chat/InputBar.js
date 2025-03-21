@@ -5,6 +5,7 @@ import TextInput from '../TextInput.js';
 import { useChat } from '../../contexts/ChatContext.js';
 import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const InputBar = ({ width = 100, isFocused = false }) => {
 
@@ -15,7 +16,13 @@ const InputBar = ({ width = 100, isFocused = false }) => {
     setInputValue,
     handleInputSubmit
   } = useChat();
-
+  const {
+    primaryColor,
+    textColor,
+    mutedTextColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate().colors
   // Track submission state to prevent double submissions
   const isSubmittingRef = useRef(false);
 
@@ -55,13 +62,13 @@ const InputBar = ({ width = 100, isFocused = false }) => {
       width={width}
       height={3}
       borderStyle="single"
-      borderColor={isFocused ? "green" : "gray"}
+      borderColor={isFocused ? activeBorderColor : borderColor}
       flexDirection="row"
       alignItems="center"
       justifyContent="flex-start"
     >
       <Box width={3} alignItems="center" justifyContent="flex-start">
-        <Text color={isFocused ? 'green' : 'gray'} bold={isFocused}>
+        <Text color={isFocused ? primaryColor : mutedTextColor} bold={isFocused}>
           {inputMode ? '_' : '>'}
         </Text>
       </Box>
@@ -75,11 +82,11 @@ const InputBar = ({ width = 100, isFocused = false }) => {
             focus={inputMode} // Ensure focus when in input mode
           />
         ) : (
-          <Text color="gray">Press {sendKey} to type (paste supported)</Text>
+          <Text color={textColor}>Press {sendKey} to type (paste supported)</Text>
         )}
       </Box>
       <Box width={30} alignItems="center" justifyContent="center">
-        <Text color="gray">
+        <Text color={mutedTextColor}>
           {inputMode
             ? `[${sendKey}] ${focusedPanel === 'rooms' ? 'Create room' : 'Send message'}`
             : `[${sendKey}] Focus`}

@@ -6,6 +6,7 @@ import mime from 'mime-types';
 import { filesize } from 'filesize';
 import { sanitizeTextForTerminal } from './utils.js';
 import path from 'path';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 // Constants for file handling
 const MAX_PREVIEW_LINES = 10;
@@ -17,15 +18,21 @@ const filePreviewCache = new Map();
 const CACHE_TTL = 60000; // 1 minute cache TTL
 
 // Memoized components for file preview
-const TextPreviewLine = memo(({ line }) => (
-  <Text wrap="truncate">{line}</Text>
-));
+const TextPreviewLine = memo(({ line }) => {
+  const {
+    textColor,
+  } = useThemeUpdate().colors;
+  return <Text color={textColor} wrap="truncate">{line}</Text>
+});
 
-const FileInfoItem = memo(({ label, value }) => (
+const FileInfoItem = memo(({ label, value }) => {
+  const {
+    textColor,
+  } = useThemeUpdate().colors;
   <Box width="100%">
-    <Text wrap="truncate">{label}: <Text bold>{value}</Text></Text>
+    <Text color={textColor} wrap="truncate">{label}: <Text bold>{value}</Text></Text>
   </Box>
-));
+});
 
 const FilePreview = ({
   selectedFile,
@@ -39,6 +46,15 @@ const FilePreview = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [totalLines, setTotalLines] = useState(0);
+  const {
+    secondaryColor,
+    mutedTextColor,
+    errorColor,
+    warningColor,
+    infoColor,
+    borderColor,
+  } = useThemeUpdate().colors;
+
 
   // Async function to load file content
   const loadFileContent = useCallback(async (file) => {
@@ -186,7 +202,7 @@ const FilePreview = ({
     if (!selectedFile) {
       return (
         <Box width={width - 4}>
-          <Text color="gray" wrap="truncate">Select a file to preview</Text>
+          <Text color={mutedTextColor} wrap="truncate">Select a file to preview</Text>
         </Box>
       );
     }
@@ -196,7 +212,7 @@ const FilePreview = ({
       return (
         <Box flexDirection="column">
           <Box width={width - 8}>
-            <Text color="blue" wrap="truncate">[Parent Directory]</Text>
+            <Text color={infoColor} wrap="truncate">[Parent Directory]</Text>
           </Box>
           <Box width={width - 8}>
             <Text wrap="truncate">Navigate to parent folder</Text>
@@ -210,7 +226,7 @@ const FilePreview = ({
       return (
         <Box flexDirection="column">
           <Box width={width - 8}>
-            <Text color="blue" wrap="truncate">[Directory]</Text>
+            <Text color={infoColor} wrap="truncate">[Directory]</Text>
           </Box>
           <Box width={width - 8}>
             <Text wrap="truncate">Press Enter to navigate inside</Text>
@@ -223,7 +239,7 @@ const FilePreview = ({
     if (error) {
       return (
         <Box width={width - 8}>
-          <Text color="red" wrap="truncate">{error}</Text>
+          <Text color={errorColor} wrap="truncate">{error}</Text>
         </Box>
       );
     }
@@ -232,7 +248,7 @@ const FilePreview = ({
     if (isLoading) {
       return (
         <Box width={width - 8}>
-          <Text color="yellow" wrap="truncate">Loading preview...</Text>
+          <Text color={warningColor} wrap="truncate">Loading preview...</Text>
         </Box>
       );
     }
@@ -251,7 +267,7 @@ const FilePreview = ({
         <>
           {previewScrollOffset > 0 && (
             <Box width={width - 8}>
-              <Text color="yellow" wrap="truncate">↑ ({previewScrollOffset} more)</Text>
+              <Text color={warningColor} wrap="truncate">↑ ({previewScrollOffset} more)</Text>
             </Box>
           )}
 
@@ -263,7 +279,7 @@ const FilePreview = ({
 
           {previewScrollOffset + maxPreviewLines < totalLines && (
             <Box width={width - 8}>
-              <Text color="yellow" wrap="truncate">
+              <Text color={warningColor} wrap="truncate">
                 ↓ ({totalLines - previewScrollOffset - maxPreviewLines} more)
               </Text>
             </Box>
@@ -277,7 +293,7 @@ const FilePreview = ({
       return (
         <Box flexDirection="column">
           <Box width={width - 8}>
-            <Text bold color="yellow" wrap="truncate">
+            <Text bold color={warningColor} wrap="truncate">
               [{fileInfo.type.split('/')[0]?.toUpperCase() || 'Binary'} File]
             </Text>
           </Box>
@@ -291,7 +307,7 @@ const FilePreview = ({
     // Fallback
     return (
       <Box width={width - 8}>
-        <Text color="gray" wrap="truncate">No preview available</Text>
+        <Text color={mutedTextColor} wrap="truncate">No preview available</Text>
       </Box>
     );
   };
@@ -301,12 +317,12 @@ const FilePreview = ({
       flexDirection="column"
       width={width}
       borderStyle="single"
-      borderColor="gray"
+      borderColor={borderColor}
       padding={1}
       marginLeft={1}
     >
       <Box width={width - 4}>
-        <Text bold color="cyan" wrap="truncate">Preview</Text>
+        <Text bold color={secondaryColor} wrap="truncate">Preview</Text>
       </Box>
 
       <Box width={width - 4}>

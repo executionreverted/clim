@@ -1,4 +1,4 @@
-// source/components/Options/ThemeTab.js
+// Fixed version of source/components/Options/ThemeTab.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import useKeymap from '../../hooks/useKeymap.js';
@@ -7,7 +7,6 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
-import { loadCurrentTheme } from '../../utils/theme.js';
 
 const ColorPreview = ({ color, label }) => (
   <Box marginRight={1}>
@@ -22,7 +21,6 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
   const {
     availableThemes,
     setTheme,
-    setCurrentTheme,
     updateThemeSettings,
     saveTheme,
     hasChanges,
@@ -36,7 +34,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
   const [messageText, setMessageText] = useState('');
 
   // List of settings for the selected theme
-  const settingKeys = Object.keys(currentTheme.settings);
+  const settingKeys = Object.keys(currentTheme.settings || {});
 
   // Effect to manage the nested state
   useEffect(() => {
@@ -56,16 +54,33 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
     setTimeout(() => setMessageText(''), duration);
   };
 
-  // Handle theme selection
-  const handleThemeSelect$ = useCallback((themeId) => {
-    setTheme(themeId);
-    saveTheme();
+  // Handle theme selection - fixed to ensure proper theme changing
+  const handleThemeSelect = useCallback((themeId) => {
+    // First check if the theme exists
+    const themeToSelect = availableThemes.find(t => t.id === themeId);
+    if (!themeToSelect) {
+      showMessage(`Error: Theme with ID ${themeId} not found`);
+      return;
+    }
 
-    // Force refresh by reloading theme from disk
-    showMessage(`Theme set to ${availableThemes.find(f => f.id == themeId).name}`);
+    // Set the theme
+    const success = setTheme(themeId);
+    if (success) {
+      // Only save if setting was successful
+      const saveSuccess = saveTheme();
+      if (saveSuccess) {
+        showMessage(`Theme set to ${themeToSelect.name}`);
+      } else {
+        showMessage('Error saving theme settings');
+      }
+    } else {
+      showMessage('Error applying theme');
+    }
+
+    // Return to settings mode
     setMode('settings');
     setSelectedOption(0);
-  }, [setTheme, saveTheme]);
+  }, [setTheme, saveTheme, availableThemes]);
 
   // Define handlers for theme tab
   const handlers = {
@@ -106,7 +121,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       } else if (mode === 'themes') {
         // Select theme and go back to settings
         if (selectedOption >= 0 && selectedOption < availableThemes.length) {
-          handleThemeSelect$(availableThemes[selectedOption].id);
+          handleThemeSelect(availableThemes[selectedOption].id);
         }
       }
     },
@@ -124,7 +139,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       showMessage('Refreshed available themes');
     },
     createExampleTheme: () => {
-      const THEMES_DIR = path.join(os.homedir(), '.hyperchatters', 'themes');
+      const THEMES_DIR = path.join(os.homedir(), '.config/.hyperchatters', 'themes');
 
       // Create a basic example theme file
       try {
@@ -217,7 +232,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       <Box marginY={1}>
         <Text>
           {selectedOption === 0 ? '>' : ' '} Theme:
-          <Text color={currentTheme.colors.primaryColor} bold={selectedOption === 0}>
+          <Text color={currentTheme.colors?.primaryColor} bold={selectedOption === 0}>
             {' '}{currentTheme.name || 'Default'}
           </Text>
           <Text color="gray"> (Press T to change)</Text>
@@ -239,7 +254,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
           <Box key={key} marginY={1}>
             <Text>
               {isSelected ? '>' : ' '} {displayName}:
-              <Text color={value ? currentTheme.colors.successColor : currentTheme.colors.errorColor} bold={isSelected}>
+              <Text color={value ? currentTheme.colors?.successColor : currentTheme.colors?.errorColor} bold={isSelected}>
                 {' '}{value ? 'Enabled' : 'Disabled'}
               </Text>
             </Text>
@@ -251,7 +266,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       <Box marginY={1}>
         <Text>
           {selectedOption === 1 + settingKeys.length ? '>' : ' '}
-          <Text color={hasChanges ? currentTheme.colors.warningColor : currentTheme.colors.successColor}
+          <Text color={hasChanges ? currentTheme.colors?.warningColor : currentTheme.colors?.successColor}
             bold={selectedOption === 1 + settingKeys.length}>
             Save Theme {hasChanges ? '(unsaved changes)' : ''}
           </Text>
@@ -262,26 +277,26 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       <Box
         marginTop={2}
         borderStyle="round"
-        borderColor={currentTheme.colors.secondaryColor}
+        borderColor={currentTheme.colors?.secondaryColor}
         padding={1}
       >
         <Text bold>
           Theme Preview:
-          <Text color={currentTheme.colors.primaryColor}>
+          <Text color={currentTheme.colors?.primaryColor}>
             {' '}{currentTheme.name} theme
           </Text>
         </Text>
 
         <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
-          <ColorPreview color={currentTheme.colors.primaryColor} label="Primary" />
-          <ColorPreview color={currentTheme.colors.secondaryColor} label="Secondary" />
+          <ColorPreview color={currentTheme.colors?.primaryColor} label="Primary" />
+          <ColorPreview color={currentTheme.colors?.secondaryColor} label="Secondary" />
         </Box>
 
         <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
-          <ColorPreview color={currentTheme.colors.successColor} label="Success" />
-          <ColorPreview color={currentTheme.colors.warningColor} label="Warning" />
-          <ColorPreview color={currentTheme.colors.errorColor} label="Error" />
-          <ColorPreview color={currentTheme.colors.infoColor} label="Info" />
+          <ColorPreview color={currentTheme.colors?.successColor} label="Success" />
+          <ColorPreview color={currentTheme.colors?.warningColor} label="Warning" />
+          <ColorPreview color={currentTheme.colors?.errorColor} label="Error" />
+          <ColorPreview color={currentTheme.colors?.infoColor} label="Info" />
         </Box>
       </Box>
 

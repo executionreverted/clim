@@ -3,11 +3,18 @@ import React, { useState } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import useKeymap from '../../hooks/useKeymap.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const UserList = ({ width = 20, height = 20, isFocused = false }) => {
   const { activeRoom, inputMode } = useChat();
   const users = activeRoom.users || [];
-
+  const {
+    primaryColor,
+    secondaryColor,
+    mutedTextColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate().colors
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxVisibleUsers = Math.max(3, height - 3);
 
@@ -40,7 +47,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
       width={width}
       height={height}
       borderStyle="single"
-      borderColor={isFocused ? "green" : "gray"}
+      borderColor={isFocused ? activeBorderColor : borderColor}
       flexDirection="column"
       padding={1}
     >
@@ -52,7 +59,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
 
       {users.length === 0 ? (
         <Box>
-          <Text color="gray" italic>
+          <Text color={mutedTextColor} italic>
             No users in this room
           </Text>
         </Box>
@@ -60,14 +67,14 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
         <>
           {scrollOffset > 0 && (
             <Box>
-              <Text color="yellow">↑ More users</Text>
+              <Text color={secondaryColor}>↑ More users</Text>
             </Box>
           )}
 
           {visibleUsers.map((user, index) => (
             <Box key={index}>
               <Text
-                color={user === 'You' ? 'green' : undefined}
+                color={user === 'You' ? secondaryColor : primaryColor}
                 bold={user === 'You'}
                 wrap="truncate"
               >
@@ -78,7 +85,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
 
           {scrollOffset + maxVisibleUsers < users.length && (
             <Box>
-              <Text color="yellow">↓ More users</Text>
+              <Text color={secondaryColor}>↓ More users</Text>
             </Box>
           )}
         </>

@@ -1,4 +1,4 @@
-// source/contexts/ThemeContext.js - Simplified version
+// Fixed version of source/contexts/ThemeContext.js
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   loadCurrentTheme,
@@ -32,19 +32,29 @@ export const ThemeProvider = ({ children }) => {
 
   // Reload available themes
   const refreshThemes = useCallback(() => {
-    setAvailableThemes(loadAvailableThemes());
+    const themes = loadAvailableThemes();
+    setAvailableThemes(themes);
+    return themes;
   }, []);
 
   // Set a new theme by ID and force immediate update
   const setTheme = useCallback((themeId) => {
-    const newTheme = availableThemes.find(theme => theme.id === themeId) || availableThemes[0];
+    const themes = refreshThemes(); // Ensure we have the latest themes
+    const newTheme = themes.find(theme => theme.id === themeId);
+
+    if (!newTheme) {
+      console.error(`Theme with ID ${themeId} not found`);
+      return false;
+    }
+
     setCurrentTheme(newTheme);
     setHasChanges(true);
     // Force re-render of all components using the theme
     setThemeUpdateCount(prev => prev + 1);
-  }, [availableThemes.length]);
+    return true;
+  }, [refreshThemes]);
 
-  // Update theme settings and force immediate update
+  // Update theme settings
   const updateThemeSettings = useCallback((newSettings) => {
     setCurrentTheme(prev => ({
       ...prev,
@@ -55,17 +65,17 @@ export const ThemeProvider = ({ children }) => {
     }));
     setHasChanges(true);
     // Force re-render of all components using the theme
-    setThemeUpdateCount(prev => prev + 2);
+    setThemeUpdateCount(prev => prev + 1);
   }, []);
 
-  // Save current theme settings to disk
+  // Save current theme settings to disk without causing recursive updates
   const saveTheme = useCallback(() => {
     const success = saveThemeSelection(currentThemeRef.current.id, currentThemeRef.current.settings);
     if (success) {
       setHasChanges(false);
+      // Update the theme update count to force a re-render, but don't call setTheme again
+      setThemeUpdateCount(prev => prev + 1);
     }
-    const updatedTheme = loadCurrentTheme();
-    setTheme(updatedTheme)
     return success;
   }, []);
 
@@ -81,8 +91,8 @@ export const ThemeProvider = ({ children }) => {
 
   // Provide theme context
   const contextValue = {
-    setCurrentTheme,
     currentTheme,
+    setCurrentTheme,
     availableThemes,
     setTheme,
     updateThemeSettings,

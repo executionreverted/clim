@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 import useKeymap from '../../hooks/useKeymap.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
@@ -13,6 +14,7 @@ const formatTime = (timestamp) => {
 // Split long message text into lines that fit within available width
 const prepareMessageLines = (text, maxWidth) => {
   if (!text) return [];
+
 
   // First split by natural line breaks
   const naturalLines = text.replaceAll('␍', '\n').split('\n');
@@ -34,7 +36,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const { activeRoom, inputMode } = useChat();
   const [scrollOffset, setScrollOffset] = useState(0);
   const messages = activeRoom.messages || [];
-
+  const {
+    primaryColor,
+    secondaryColor,
+    mutedTextColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate().colors
   // Calculate available width and height
   const contentWidth = Math.max(20, width - 6); // Adjust for borders and padding
   const availableHeight = Math.max(5, height - 6); // Account for header and padding
@@ -126,7 +134,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       width={width}
       height={height}
       borderStyle="single"
-      borderColor={isFocused ? "green" : "gray"}
+      borderColor={isFocused ? activeBorderColor : borderColor}
       flexDirection="column"
       padding={1}
     >
@@ -138,7 +146,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
 
       {messages.length === 0 ? (
         <Box>
-          <Text color="gray" italic>
+          <Text color={mutedTextColor} italic>
             No messages in this room yet
           </Text>
         </Box>
@@ -153,15 +161,15 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
               if (line.type === 'header') {
                 return (
                   <Box overflow={"hidden"} key={`h-${line.messageId}-${idx}`} width={contentWidth}>
-                    <Text color="blue" bold>{line.user}</Text>
+                    <Text color={primaryColor} bold>{line.user}</Text>
                     <Text> </Text>
-                    <Text color="gray">{formatTime(line.timestamp)}</Text>
+                    <Text color={mutedTextColor}>{formatTime(line.timestamp)}</Text>
                   </Box>
                 );
               } else {
                 return (
                   <Box overflow="hidden" key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
+                    <Text color={line.isFileMessage ? secondaryColor : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
                   </Box>
                 );
               }
@@ -173,13 +181,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       {/* Scroll indicators - small and positioned strategically */}
       {scrollOffset > 0 && (
         <Box position="absolute" right={2} top={1}>
-          <Text color="yellow" bold>↑{scrollOffset}</Text>
+          <Text color={secondaryColor} bold>↑{scrollOffset}</Text>
         </Box>
       )}
 
       {scrollOffset < maxScrollOffset && (
         <Box position="absolute" right={2} bottom={1}>
-          <Text color="yellow" bold>↓</Text>
+          <Text color={secondaryColor} bold>↓</Text>
         </Box>
       )}
     </Box>

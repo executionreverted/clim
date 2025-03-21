@@ -9,6 +9,7 @@ import InputBar from './InputBar.js';
 import TopBar from './TopBar.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const {
@@ -21,7 +22,18 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     onBack,
     setShowFileExplorer
   } = useChat();
-
+  const {
+    primaryColor,
+    secondaryColor,
+    textColor,
+    mutedTextColor,
+    errorColor,
+    successColor,
+    warningColor,
+    infoColor,
+    borderColor,
+    activeBorderColor,
+  } = useThemeUpdate()
   // Calculate panel widths based on terminal size
   const availableWidth = Math.max(60, width);
   const roomListWidth = Math.max(15, Math.floor(availableWidth * 0.15));

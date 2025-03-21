@@ -8,6 +8,7 @@ const DEFAULT_KEYMAP = {
   global: {
     exit: { key: 'q', ctrl: true, description: 'Exit application' },
     back: { key: 'escape', description: 'Go back/Cancel' },
+    help: { key: 'h', ctrl: true, description: 'Show help' },
   },
   welcome: {
     startChat: { key: 'c', description: 'Start chat' },
@@ -22,35 +23,56 @@ const DEFAULT_KEYMAP = {
     openDir: { key: 'return', description: 'Open directory' },
     parentDir: { key: 'h', description: 'Go to parent directory' },
     goBack: { key: 'b', description: 'Go back to previous directory' },
-    previewScrollUp: { key: 'upArrow', ctrl: true, description: 'Scroll preview up' },
-    previewScrollDown: { key: 'downArrow', ctrl: true, description: 'Scroll preview down' },
+    previewScrollUp: { key: 'k', description: 'Scroll preview up' },
+    previewScrollDown: { key: 'j', description: 'Scroll preview down' },
     openFile: { key: 'o', description: 'Open file in system default app' },
     pickFile: { key: 'p', description: 'Pick file (in browse mode)' },
     toggleSelection: { key: 'space', description: 'Toggle selection (in multi-select mode)' },
-    space: { key: 'space', description: 'Toggle selection (in multi-select mode)' }, // Explicit space binding
+    space: { key: 'space', description: 'Toggle selection (in multi-select mode)' },
+    search: { key: 'f', description: 'Find files' },
+    refresh: { key: 'r', description: 'Refresh directory' },
+    newFile: { key: 'n', description: 'New file' },
+    newFolder: { key: 'N', shift: true, description: 'New folder' },
+    delete: { key: 'd', description: 'Delete item' },
   },
   chat: {
     switchPanel: { key: 'tab', description: 'Switch between panels' },
     focusInput: { key: 'return', description: 'Focus input/submit' },
     navigateUp: { key: 'upArrow', description: 'Navigate up' },
     navigateDown: { key: 'downArrow', description: 'Navigate down' },
+    pageUp: { key: 'pageUp', description: 'Page up through messages' },
+    pageDown: { key: 'pageDown', description: 'Page down through messages' },
     addRoom: { key: 'a', description: 'Add chat room' },
-    shareFile: { key: 'T', shift: true, description: 'Share file' },
+    shareFile: { key: 's', description: 'Share file' },
     scrollToTop: { key: 'g', description: 'Scroll to oldest messages' },
     scrollToBottom: { key: 'G', shift: true, description: 'Scroll to newest messages' },
+    clearRoom: { key: 'c', ctrl: true, description: 'Clear current room' },
+    leaveRoom: { key: 'l', description: 'Leave current room' },
+    joinRoom: { key: 'j', description: 'Join a room' },
+    directMessage: { key: 'd', description: 'Direct message user' },
+    toggleEmoji: { key: 'e', description: 'Toggle emoji picker' },
+    formatBold: { key: 'b', ctrl: true, description: 'Format text as bold' },
+    formatItalic: { key: 'i', ctrl: true, description: 'Format text as italic' },
+    formatCode: { key: 'k', ctrl: true, description: 'Format text as code' },
   },
   options: {
     nextTab: { key: 'rightArrow', description: 'Next tab' },
     previousTab: { key: 'leftArrow', description: 'Previous tab' },
     navigateUp: { key: 'upArrow', description: 'Navigate up' },
     navigateDown: { key: 'downArrow', description: 'Navigate down' },
-    toggleOption: { key: 'return', description: 'Toggle option' },
+    toggleOption: { key: 't', description: 'Toggle option' },
     back: { key: 'escape', description: 'Go back' },
+    save: { key: 's', ctrl: true, description: 'Save settings' },
+    reset: { key: 'r', ctrl: true, description: 'Reset to defaults' },
+    refreshThemes: { key: 'r', description: 'Refresh themes' },
+    createExampleTheme: { key: 'e', description: 'Create example theme' },
+    exportSettings: { key: 'x', description: 'Export settings' },
+    importSettings: { key: 'i', description: 'Import settings' },
   }
 };
 
 // Config file path
-const CONFIG_FILENAME = '.config/.hyperchatters/.hyperchatters.conf';
+const CONFIG_FILENAME = '.config/.hyperchatters/keymap.json';
 const CONFIG_PATH = path.join(os.homedir(), CONFIG_FILENAME);
 
 /**

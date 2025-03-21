@@ -7,7 +7,7 @@ import path from 'path';
 import os from 'os';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 // Configuration file path
-const CONFIG_PATH = path.join(os.homedir(), '.hyperchatters', 'config.json');
+const CONFIG_PATH = path.join(os.homedir(), '.config/.hyperchatters', 'config.json');
 
 const GeneralTab = ({ width, height }) => {
 
