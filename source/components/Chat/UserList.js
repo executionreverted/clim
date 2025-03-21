@@ -36,6 +36,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
 
   return (
     <Box
+      flexGrow={1}
       width={width}
       height={height}
       borderStyle="single"
