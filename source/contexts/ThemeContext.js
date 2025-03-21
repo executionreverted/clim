@@ -1,4 +1,4 @@
-// source/contexts/ThemeContext.js
+// source/contexts/ThemeContext.js - Simplified version
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   loadCurrentTheme,
@@ -42,7 +42,7 @@ export const ThemeProvider = ({ children }) => {
     setHasChanges(true);
     // Force re-render of all components using the theme
     setThemeUpdateCount(prev => prev + 1);
-  }, [availableThemes]);
+  }, [availableThemes.length]);
 
   // Update theme settings and force immediate update
   const updateThemeSettings = useCallback((newSettings) => {
@@ -55,7 +55,7 @@ export const ThemeProvider = ({ children }) => {
     }));
     setHasChanges(true);
     // Force re-render of all components using the theme
-    setThemeUpdateCount(prev => prev + 1);
+    setThemeUpdateCount(prev => prev + 2);
   }, []);
 
   // Save current theme settings to disk
@@ -64,23 +64,14 @@ export const ThemeProvider = ({ children }) => {
     if (success) {
       setHasChanges(false);
     }
+    const updatedTheme = loadCurrentTheme();
+    setTheme(updatedTheme)
     return success;
   }, []);
 
-  // Get color from current theme
-  const getColor = useCallback((colorPath) => {
-    const theme = currentThemeRef.current;
-    const parts = colorPath.split('.');
-    let color = { ...theme.colors };
-
-    for (const part of parts) {
-      if (color[part] === undefined) {
-        return undefined;
-      }
-      color = color[part];
-    }
-
-    return color;
+  // Get color from current theme directly
+  const getColor = useCallback((colorName) => {
+    return currentThemeRef.current.colors[colorName];
   }, []);
 
   // Get setting value from current theme
@@ -90,6 +81,7 @@ export const ThemeProvider = ({ children }) => {
 
   // Provide theme context
   const contextValue = {
+    setCurrentTheme,
     currentTheme,
     availableThemes,
     setTheme,

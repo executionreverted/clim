@@ -124,9 +124,9 @@ const KeymapTab = ({ width, height }) => {
   const contexts = Object.keys(keymap);
 
   // Use theme colors
-  const primaryColor = currentTheme.colors.primary;
-  const secondaryColor = currentTheme.colors.secondary;
-  const textColor = currentTheme.colors.text.primary;
+  const primaryColor = currentTheme.colors.primaryColor;
+  const secondaryColor = currentTheme.colors.secondaryColor;
+  const textColor = currentTheme.colors.primaryColor;
 
   return (
     <Box flexDirection="column" width={width} height={height}>

@@ -105,9 +105,9 @@ const GeneralTab = ({ width, height }) => {
   useKeymap('options', handlers);
 
   // Use theme colors
-  const primaryColor = currentTheme.colors.primary;
-  const successColor = currentTheme.colors.success;
-  const errorColor = currentTheme.colors.error;
+  const primaryColor = currentTheme.colors.primaryColor;
+  const successColor = currentTheme.colors.successColor;
+  const errorColor = currentTheme.colors.errorColor;
 
   return (
     <Box flexDirection="column" width={width} height={height}>

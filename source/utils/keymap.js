@@ -50,7 +50,7 @@ const DEFAULT_KEYMAP = {
 };
 
 // Config file path
-const CONFIG_FILENAME = '.config/.hyperchatters.conf';
+const CONFIG_FILENAME = '.config/.hyperchatters/.hyperchatters.conf';
 const CONFIG_PATH = path.join(os.homedir(), CONFIG_FILENAME);
 
 /**

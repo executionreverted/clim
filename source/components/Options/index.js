@@ -95,13 +95,11 @@ const OptionsContent = ({ onBack }) => {
   const ActiveTabComponent = tabs[activeTab].component;
 
   // Apply theme colors
-  const borderColor = currentTheme.colors.border.active;
-  const tabBorderColor = currentTheme.colors.border.inactive;
 
   return (
     <Box flexDirection="column" width={terminalWidth} height={terminalHeight}>
       {/* Header */}
-      <Box borderStyle="single" borderColor="green" padding={1} marginBottom={1}>
+      <Box borderStyle="single" borderColor={currentTheme.colors.successColor} padding={1} marginBottom={1}>
         <Text bold>Application Settings {hasChanges ? "(Unsaved Changes)" : ""}</Text>
       </Box>
 
@@ -111,14 +109,14 @@ const OptionsContent = ({ onBack }) => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         width={terminalWidth}
-        borderColor={currentTheme.colors.border.inactive}
-        activeColor={currentTheme.colors.primary}
+        borderColor={currentTheme.colors.borderColor}
+        activeColor={currentTheme.colors.primaryColor}
       />
 
       {/* Tab Content */}
       <Box
         borderStyle="single"
-        borderColor="gray"
+        borderColor={currentTheme.colors.borderColor}
         padding={1}
         flexGrow={1}
         flexDirection="column"
@@ -130,9 +128,9 @@ const OptionsContent = ({ onBack }) => {
       {/* Help Footer */}
       <Box borderStyle="single" borderColor="gray" padding={1} marginTop={1}>
         <Text wrap="truncate">
-          <Text color={currentTheme.colors.primary}>←/→</Text>: Switch tabs |
-          <Text color={currentTheme.colors.primary}> {toggleKey}</Text>: Toggle option |
-          <Text color={currentTheme.colors.primary}> {backKey}</Text>: Back to main menu
+          <Text color={currentTheme.colors.primaryColor}>←/→</Text>: Switch tabs |
+          <Text color={currentTheme.colors.primaryColor}> {toggleKey}</Text>: Toggle option |
+          <Text color={currentTheme.colors.primaryColor}> {backKey}</Text>: Back to main menu
         </Text>
       </Box>
     </Box>

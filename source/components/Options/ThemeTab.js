@@ -1,5 +1,5 @@
 // source/components/Options/ThemeTab.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import useKeymap from '../../hooks/useKeymap.js';
 import { useTheme } from '../../contexts/ThemeContext.js';
@@ -7,21 +7,32 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import { loadCurrentTheme } from '../../utils/theme.js';
+
+const ColorPreview = ({ color, label }) => (
+  <Box marginRight={1}>
+    <Text>
+      {label}: <Text color={color}>■■■</Text>
+    </Text>
+  </Box>
+);
 
 const ThemeTab = ({ setIsInNested, width, height }) => {
   // Get theme context
   const {
     availableThemes,
     setTheme,
+    setCurrentTheme,
     updateThemeSettings,
     saveTheme,
     hasChanges,
     refreshThemes
   } = useTheme();
-  const currentTheme = useThemeUpdate()
+  const currentTheme = useThemeUpdate();
+
   // Local component state
   const [selectedOption, setSelectedOption] = useState(0);
-  const [mode, setMode] = useState('settings'); // 'settings', 'themes', or 'preview'
+  const [mode, setMode] = useState('settings'); // 'settings' or 'themes'
   const [messageText, setMessageText] = useState('');
 
   // List of settings for the selected theme
@@ -45,6 +56,17 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
     setTimeout(() => setMessageText(''), duration);
   };
 
+  // Handle theme selection
+  const handleThemeSelect$ = useCallback((themeId) => {
+    setTheme(themeId);
+    saveTheme();
+
+    // Force refresh by reloading theme from disk
+    showMessage(`Theme set to ${availableThemes.find(f => f.id == themeId).name}`);
+    setMode('settings');
+    setSelectedOption(0);
+  }, [setTheme, saveTheme]);
+
   // Define handlers for theme tab
   const handlers = {
     navigateUp: () => {
@@ -56,7 +78,8 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
     },
     navigateDown: () => {
       if (mode === 'settings') {
-        setSelectedOption((prev) => Math.min(settingKeys.length, prev + 1));
+        const maxOption = 1 + settingKeys.length; // Theme, Settings, Save
+        setSelectedOption((prev) => Math.min(maxOption, prev + 1));
       } else if (mode === 'themes') {
         setSelectedOption((prev) => Math.min(availableThemes.length - 1, prev + 1));
       }
@@ -69,34 +92,27 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
           setMode('themes');
           const currentThemeIndex = availableThemes.findIndex(t => t.id === currentTheme.id);
           setSelectedOption(currentThemeIndex >= 0 ? currentThemeIndex : 0);
-        } else if (selectedOption === settingKeys.length) {
-          // Save theme option
+        }
+        // Toggle boolean settings
+        else if (selectedOption <= settingKeys.length) {
+          const key = settingKeys[selectedOption - 1]; // -1 because first option is theme
+          updateThemeSettings({ [key]: !currentTheme.settings[key] });
+        }
+        // Save option
+        else {
           const success = saveTheme();
           showMessage(success ? 'Theme saved successfully!' : 'Failed to save theme.');
-        } else {
-          // Toggle boolean settings
-          const key = settingKeys[selectedOption - 1]; // -1 because first option is theme selection
-          updateThemeSettings({ [key]: !currentTheme.settings[key] });
         }
       } else if (mode === 'themes') {
         // Select theme and go back to settings
         if (selectedOption >= 0 && selectedOption < availableThemes.length) {
-          // Apply theme immediately
-          const themeId = availableThemes[selectedOption].id;
-          setTheme(themeId);
-
-          // Save changes to make them persist
-          saveTheme();
-
-          showMessage(`Theme set to ${availableThemes[selectedOption].name}`);
+          handleThemeSelect$(availableThemes[selectedOption].id);
         }
-        setMode('settings');
-        setSelectedOption(0); // Back to first settings option
       }
     },
     back: () => {
-      if (mode === 'themes') {
-        // Go back to settings mode without changing theme
+      if (mode !== 'settings') {
+        // Go back to settings mode
         setMode('settings');
         setSelectedOption(0);
         return true; // Prevent bubbling to parent
@@ -123,28 +139,16 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
           name: 'My Custom Theme',
           description: 'A custom theme created as an example',
           colors: {
-            primary: 'magenta',
-            secondary: 'cyan',
-            tertiary: 'yellow',
-            success: 'green',
-            warning: 'yellow',
-            error: 'red',
-            info: 'blue',
-            text: {
-              primary: 'white',
-              secondary: 'gray',
-              muted: 'dimGray'
-            },
-            border: {
-              active: 'magenta',
-              inactive: 'gray',
-              focus: 'cyan'
-            },
-            background: {
-              primary: undefined,
-              secondary: undefined,
-              highlight: undefined
-            }
+            primaryColor: 'magenta',
+            secondaryColor: 'cyan',
+            textColor: 'white',
+            mutedTextColor: 'gray',
+            errorColor: 'red',
+            successColor: 'green',
+            warningColor: 'yellow',
+            infoColor: 'blue',
+            borderColor: 'gray',
+            activeBorderColor: 'magenta'
           },
           settings: { ...currentTheme.settings }
         };
@@ -194,12 +198,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
         </Box>
 
         {messageText && (
-          <Box
-            marginTop={1}
-            padding={1}
-            borderStyle="round"
-            borderColor="yellow"
-          >
+          <Box marginTop={1} padding={1} borderStyle="round" borderColor="yellow">
             <Text color="yellow">{messageText}</Text>
           </Box>
         )}
@@ -218,7 +217,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       <Box marginY={1}>
         <Text>
           {selectedOption === 0 ? '>' : ' '} Theme:
-          <Text color="cyan" bold={selectedOption === 0}>
+          <Text color={currentTheme.colors.primaryColor} bold={selectedOption === 0}>
             {' '}{currentTheme.name || 'Default'}
           </Text>
           <Text color="gray"> (Press T to change)</Text>
@@ -227,7 +226,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
 
       {/* Boolean settings */}
       {settingKeys.map((key, index) => {
-        const actualIndex = index + 1; // +1 because first option is theme selection
+        const actualIndex = index + 1; // +1 because first option is theme
         const isSelected = actualIndex === selectedOption;
         const value = currentTheme.settings[key];
 
@@ -240,7 +239,7 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
           <Box key={key} marginY={1}>
             <Text>
               {isSelected ? '>' : ' '} {displayName}:
-              <Text color={value ? 'green' : 'red'} bold={isSelected}>
+              <Text color={value ? currentTheme.colors.successColor : currentTheme.colors.errorColor} bold={isSelected}>
                 {' '}{value ? 'Enabled' : 'Disabled'}
               </Text>
             </Text>
@@ -251,8 +250,9 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       {/* Save option */}
       <Box marginY={1}>
         <Text>
-          {selectedOption === settingKeys.length ? '>' : ' '}
-          <Text color={hasChanges ? 'yellow' : 'green'} bold={selectedOption === settingKeys.length}>
+          {selectedOption === 1 + settingKeys.length ? '>' : ' '}
+          <Text color={hasChanges ? currentTheme.colors.warningColor : currentTheme.colors.successColor}
+            bold={selectedOption === 1 + settingKeys.length}>
             Save Theme {hasChanges ? '(unsaved changes)' : ''}
           </Text>
         </Text>
@@ -262,26 +262,27 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
       <Box
         marginTop={2}
         borderStyle="round"
-        borderColor="cyan"
+        borderColor={currentTheme.colors.secondaryColor}
         padding={1}
       >
         <Text bold>
           Theme Preview:
-          <Text color={currentTheme.colors.primary}>
+          <Text color={currentTheme.colors.primaryColor}>
             {' '}{currentTheme.name} theme
           </Text>
         </Text>
-        <Text>
-          Primary Color: <Text color={currentTheme.colors.primary}>■■■</Text>
-        </Text>
-        <Text>
-          Secondary Color: <Text color={currentTheme.colors.secondary}>■■■</Text>
-        </Text>
-        <Text>
-          Success: <Text color={currentTheme.colors.success}>■■■</Text> |
-          Warning: <Text color={currentTheme.colors.warning}>■■■</Text> |
-          Error: <Text color={currentTheme.colors.error}>■■■</Text>
-        </Text>
+
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
+          <ColorPreview color={currentTheme.colors.primaryColor} label="Primary" />
+          <ColorPreview color={currentTheme.colors.secondaryColor} label="Secondary" />
+        </Box>
+
+        <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
+          <ColorPreview color={currentTheme.colors.successColor} label="Success" />
+          <ColorPreview color={currentTheme.colors.warningColor} label="Warning" />
+          <ColorPreview color={currentTheme.colors.errorColor} label="Error" />
+          <ColorPreview color={currentTheme.colors.infoColor} label="Info" />
+        </Box>
       </Box>
 
       <Box marginTop={1} flexDirection="row">

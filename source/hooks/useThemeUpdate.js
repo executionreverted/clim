@@ -13,7 +13,7 @@ export function useThemeUpdate() {
   // Force re-render when themeUpdateCount changes
   useEffect(() => {
     setRenderKey(prev => prev + 1);
-  }, [themeUpdateCount]);
+  }, [themeUpdateCount, currentTheme.id]);
 
   return currentTheme;
 }

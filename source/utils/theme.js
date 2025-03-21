@@ -1,49 +1,36 @@
-// source/utils/theme.js
+// source/utils/theme.js - Simplified version
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logError } from './errorHandler.js';
 
 // Configuration
-const THEMES_DIR = path.join(os.homedir(), '.hyperchatters', 'themes');
+const THEMES_DIR = path.join(os.homedir(), '.config', '.hyperchatters', 'themes');
 const DEFAULT_THEME_PATH = path.join(THEMES_DIR, 'current.json');
 
-// Default theme configuration
+// Default theme configuration with simplified color scheme
 export const DEFAULT_THEMES = {
   default: {
     id: 'default',
     name: 'Default',
     description: 'Standard terminal colors',
     colors: {
-      primary: 'green',
-      secondary: 'blue',
-      tertiary: 'cyan',
-      success: 'green',
-      warning: 'yellow',
-      error: 'red',
-      info: 'blue',
-      text: {
-        primary: 'white',
-        secondary: 'gray',
-        muted: 'dimGray'
-      },
-      border: {
-        active: 'green',
-        inactive: 'gray',
-        focus: 'blue'
-      },
-      background: {
-        primary: undefined, // Use terminal default
-        secondary: undefined,
-        highlight: undefined
-      }
+      primaryColor: 'green',
+      secondaryColor: 'blue',
+      textColor: 'white',
+      mutedTextColor: 'gray',
+      errorColor: 'red',
+      successColor: 'green',
+      warningColor: 'yellow',
+      infoColor: 'cyan',
+      borderColor: 'gray',
+      activeBorderColor: 'green'
     },
     settings: {
       showHelpBoxes: true,
       useColoredIcons: true,
       showBorders: true,
-      boldText: true,
-      useGradients: true
+      boldText: true
     }
   },
   dark: {
@@ -51,35 +38,22 @@ export const DEFAULT_THEMES = {
     name: 'Dark',
     description: 'Optimized for dark terminals',
     colors: {
-      primary: 'cyan',
-      secondary: 'blue',
-      tertiary: 'magenta',
-      success: 'green',
-      warning: 'yellow',
-      error: 'red',
-      info: 'blue',
-      text: {
-        primary: 'white',
-        secondary: 'gray',
-        muted: 'dimGray'
-      },
-      border: {
-        active: 'cyan',
-        inactive: 'gray',
-        focus: 'blue'
-      },
-      background: {
-        primary: undefined,
-        secondary: undefined,
-        highlight: undefined
-      }
+      primaryColor: 'cyan',
+      secondaryColor: 'blue',
+      textColor: 'white',
+      mutedTextColor: 'gray',
+      errorColor: 'red',
+      successColor: 'green',
+      warningColor: 'yellow',
+      infoColor: 'cyan',
+      borderColor: 'gray',
+      activeBorderColor: 'cyan'
     },
     settings: {
       showHelpBoxes: true,
       useColoredIcons: true,
       showBorders: true,
-      boldText: true,
-      useGradients: true
+      boldText: true
     }
   },
   light: {
@@ -87,35 +61,22 @@ export const DEFAULT_THEMES = {
     name: 'Light',
     description: 'Optimized for light terminals',
     colors: {
-      primary: 'blue',
-      secondary: 'magenta',
-      tertiary: 'cyan',
-      success: 'green',
-      warning: 'yellow',
-      error: 'red',
-      info: 'blue',
-      text: {
-        primary: 'black',
-        secondary: 'gray',
-        muted: 'dimGray'
-      },
-      border: {
-        active: 'blue',
-        inactive: 'gray',
-        focus: 'cyan'
-      },
-      background: {
-        primary: undefined,
-        secondary: undefined,
-        highlight: undefined
-      }
+      primaryColor: 'blue',
+      secondaryColor: 'magenta',
+      textColor: 'black',
+      mutedTextColor: 'gray',
+      errorColor: 'red',
+      successColor: 'green',
+      warningColor: 'yellow',
+      infoColor: 'blue',
+      borderColor: 'gray',
+      activeBorderColor: 'blue'
     },
     settings: {
       showHelpBoxes: true,
       useColoredIcons: true,
       showBorders: true,
-      boldText: true,
-      useGradients: false
+      boldText: true
     }
   },
   monochrome: {
@@ -123,71 +84,91 @@ export const DEFAULT_THEMES = {
     name: 'Monochrome',
     description: 'Black and white only',
     colors: {
-      primary: 'white',
-      secondary: 'white',
-      tertiary: 'white',
-      success: 'white',
-      warning: 'white',
-      error: 'white',
-      info: 'white',
-      text: {
-        primary: 'white',
-        secondary: 'gray',
-        muted: 'dimGray'
-      },
-      border: {
-        active: 'white',
-        inactive: 'gray',
-        focus: 'white'
-      },
-      background: {
-        primary: undefined,
-        secondary: undefined,
-        highlight: undefined
-      }
+      primaryColor: 'white',
+      secondaryColor: 'white',
+      textColor: 'white',
+      mutedTextColor: 'gray',
+      errorColor: 'white',
+      successColor: 'white',
+      warningColor: 'white',
+      infoColor: 'white',
+      borderColor: 'gray',
+      activeBorderColor: 'white'
     },
     settings: {
       showHelpBoxes: true,
       useColoredIcons: false,
       showBorders: true,
-      boldText: true,
-      useGradients: false
+      boldText: true
     }
   },
   cyberpunk: {
     id: 'cyberpunk',
     name: 'Cyberpunk',
-    description: 'Neon colors on dark background',
+    description: 'Neon colors with futuristic feel',
     colors: {
-      primary: 'magenta',
-      secondary: 'cyan',
-      tertiary: 'yellow',
-      success: '#00ff00', // Bright neon green
-      warning: '#ff00ff', // Neon pink
-      error: '#ff0000', // Bright red
-      info: '#00ffff', // Bright cyan
-      text: {
-        primary: '#00ffff', // Cyan
-        secondary: '#ff00ff', // Magenta
-        muted: '#7700ff' // Purple
-      },
-      border: {
-        active: '#00ffff', // Cyan
-        inactive: '#7700ff', // Purple
-        focus: '#ff00ff' // Magenta
-      },
-      background: {
-        primary: undefined,
-        secondary: undefined,
-        highlight: undefined
-      }
+      primaryColor: 'magenta',
+      secondaryColor: 'cyan',
+      textColor: '#00ffff', // Bright cyan
+      mutedTextColor: '#ff00ff', // Bright magenta
+      errorColor: '#ff0000', // Bright red
+      successColor: '#00ff00', // Bright green
+      warningColor: '#ffff00', // Bright yellow
+      infoColor: '#00ffff', // Bright cyan
+      borderColor: '#7700ff', // Purple
+      activeBorderColor: '#ff00ff' // Magenta
     },
     settings: {
       showHelpBoxes: true,
       useColoredIcons: true,
       showBorders: true,
-      boldText: true,
-      useGradients: true
+      boldText: true
+    }
+  },
+  matrix: {
+    id: 'matrix',
+    name: 'Matrix',
+    description: 'Green matrix-like color scheme',
+    colors: {
+      primaryColor: '#00ff00', // Bright green
+      secondaryColor: '#005500', // Darker green
+      textColor: '#00ff00', // Bright green
+      mutedTextColor: '#009900', // Medium green
+      errorColor: '#ff0000', // Red
+      successColor: '#00ff00', // Bright green
+      warningColor: '#ffff00', // Yellow
+      infoColor: '#00ffcc', // Turquoise
+      borderColor: '#009900', // Medium green
+      activeBorderColor: '#00ff00' // Bright green
+    },
+    settings: {
+      showHelpBoxes: true,
+      useColoredIcons: true,
+      showBorders: true,
+      boldText: true
+    }
+  },
+  catppuccin: {
+    id: 'catppuccin',
+    name: 'Catppuccin',
+    description: 'Soothing pastel theme',
+    colors: {
+      primaryColor: '#f5c2e7', // Pink
+      secondaryColor: '#cba6f7', // Lavender
+      textColor: '#cdd6f4', // Text
+      mutedTextColor: '#bac2de', // Subtext1
+      errorColor: '#f38ba8', // Red
+      successColor: '#a6e3a1', // Green
+      warningColor: '#fab387', // Peach
+      infoColor: '#89dceb', // Sky
+      borderColor: '#a6adc8', // Overlay0
+      activeBorderColor: '#f5c2e7' // Pink
+    },
+    settings: {
+      showHelpBoxes: true,
+      useColoredIcons: true,
+      showBorders: true,
+      boldText: true
     }
   }
 };
@@ -236,7 +217,7 @@ export function saveThemeSelection(themeId, settings = {}) {
     logError(err, 'theme-save');
     return false;
   }
-}
+};
 
 /**
  * Load all available themes from the themes directory
@@ -283,7 +264,7 @@ export function loadAvailableThemes() {
   }
 
   return themes;
-}
+};
 
 /**
  * Load the current theme settings
@@ -302,7 +283,7 @@ export function loadCurrentTheme() {
 
   // Return default theme if no saved theme or error
   return DEFAULT_THEMES.default;
-}
+};
 
 /**
  * Create an example theme file
@@ -332,10 +313,10 @@ export function createExampleTheme(themeName = 'custom') {
     logError(err, 'theme-create-example');
     return false;
   }
-}
+};
 
 /**
- * Create theme context provider and hook
+ * Create theme system with default files
  */
 export function createThemeSystem() {
   // Create examples for all default themes
@@ -347,42 +328,7 @@ export function createThemeSystem() {
   if (!fs.existsSync(DEFAULT_THEME_PATH)) {
     saveThemeSelection('default');
   }
-}
-
-/**
- * Apply theme styles to a component
- * @param {string} elementType - Type of UI element
- * @param {string} state - Element state (active, inactive, etc.)
- * @param {Object} theme - Theme object
- * @returns {Object} - Style object for the element
- */
-export function getThemeStyles(elementType, state = 'default', theme = null) {
-  const currentTheme = theme || loadCurrentTheme();
-  const styles = {};
-
-  switch (elementType) {
-    case 'border':
-      styles.borderColor = currentTheme.colors.border[state] || currentTheme.colors.border.inactive;
-      styles.borderStyle = currentTheme.settings.showBorders ? 'single' : 'none';
-      break;
-    case 'text':
-      styles.color = currentTheme.colors.text[state] || currentTheme.colors.text.primary;
-      styles.bold = state === 'heading' ? currentTheme.settings.boldText : false;
-      break;
-    case 'button':
-      styles.color = state === 'active' ? currentTheme.colors.primary : currentTheme.colors.text.secondary;
-      styles.bold = state === 'active';
-      break;
-    case 'highlight':
-      styles.color = currentTheme.colors[state] || currentTheme.colors.primary;
-      styles.bold = currentTheme.settings.boldText;
-      break;
-    default:
-      styles.color = currentTheme.colors.text.primary;
-  }
-
-  return styles;
-}
+};
 
 // Initialize theme system
 createThemeSystem();
@@ -392,6 +338,5 @@ export default {
   loadCurrentTheme,
   loadAvailableThemes,
   saveThemeSelection,
-  createExampleTheme,
-  getThemeStyles
+  createExampleTheme
 };
