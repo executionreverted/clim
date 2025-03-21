@@ -1,7 +1,7 @@
 // components/Chat/InputBar.js
 import React from 'react';
 import { Box, Text } from 'ink';
-import TextInput from 'ink-text-input';
+import TextInput from '../TextInput.js';
 import { useChat } from '../../contexts/ChatContext.js';
 import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
 
@@ -47,6 +47,7 @@ const InputBar = ({ width = 100, isFocused = false }) => {
       <Box width="100%" flexGrow={1} alignItems="center" justifyContent="flex-start">
         {inputMode ? (
           <TextInput
+            wrap={"truncate-start"}
             value={displayValue}
             onChange={handleChange}
             onSubmit={handleInputSubmit}
