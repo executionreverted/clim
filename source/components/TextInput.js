@@ -215,18 +215,12 @@ function TextInput({
           originalValue.slice(selectionEnd);
         nextCursorOffset = selectionStart;
         nextIsSelecting = false;
-      } else if (key.backspace && cursorOffset > 0) {
+      } else if (key.delete && cursorOffset > 0) {
         // Backspace at cursor
         nextValue =
           originalValue.slice(0, cursorOffset - 1) +
           originalValue.slice(cursorOffset);
         nextCursorOffset--;
-        nextIsSelecting = false;
-      } else if (key.delete && cursorOffset < originalValue.length) {
-        // Delete at cursor
-        nextValue =
-          originalValue.slice(0, cursorOffset) +
-          originalValue.slice(cursorOffset + 1);
         nextIsSelecting = false;
       }
     }
