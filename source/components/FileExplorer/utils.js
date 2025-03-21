@@ -129,9 +129,10 @@ export const sanitizeTextForTerminal = (text) => {
   return text
     // Replace tabs with visible indicators
     .replace(/\t/g, '→   ')
-
     // Handle carriage returns
     .replace(/\r/g, '␍')
+    .replace(/\n/, '␍')
+    .replace(/\n/g, '↵')
 
     // Strip ANSI color/control sequences
     .replace(/\u001b\[\d+(;\d+)*m/g, '')
@@ -139,39 +140,12 @@ export const sanitizeTextForTerminal = (text) => {
     // Replace null bytes
     .replace(/\0/g, '␀')
 
-    // Handle bidirectional text control characters
-    .replace(/[\u2066-\u2069\u202A-\u202E\u061C]/g, '⤷')
-
-    // Replace zero-width characters that can hide malicious content
-    .replace(/[\u200B-\u200F\u2060\uFEFF]/g, '␣')
-
-    // Handle emojis and other surrogate pairs
-    .replace(/([\uD800-\uDBFF][\uDC00-\uDFFF])/g, '🔣')
-
-    // Handle various space characters uniformly
-    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-
-    // Replace vertical tabs and form feeds
-    .replace(/[\u000B\u000C]/g, '⏎')
-
-    // Replace private use area characters
-    .replace(/[\uE000-\uF8FF]/g, '�')
-
-    // Handle combining characters that can stack and break layout
-    .replace(/[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g, '⌃')
-
     // Replace non-printable control characters
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, (c) => {
       if (c === '\n') return c; // Keep newlines
       return `␛${c.charCodeAt(0).toString(16).padStart(2, '0')}`;
     })
 
-    // Replace unicode "replacement character" and similar problematic characters
-    .replace(/[\uFFFD\uFFF9-\uFFFB]/g, '�')
-
-    // Limit consecutive newlines to prevent "blank space" attacks
-    .replace(/\n{3,}/g, '\n\n')
-
-    // Handle line tabulation set/character tabulation set/etc.
-    .replace(/[\u008A-\u008F]/g, '⇥');
+    // Replace unicode "replacement character" that appears for invalid sequences
+    .replace(/\uFFFD/g, '�');
 };

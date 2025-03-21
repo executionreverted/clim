@@ -17,7 +17,7 @@ const prepareMessageLines = (text, maxWidth) => {
 
 
   // First split by natural line breaks
-  const naturalLines = text.replaceAll('␍', '\n').split('\n');
+  const naturalLines = text.replaceAll('␍', '\n').replaceAll('↵', '\n').split('\n');
   const result = [];
 
   // Then ensure each line fits within maxWidth
