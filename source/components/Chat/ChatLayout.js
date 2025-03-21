@@ -49,6 +49,8 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   // Define handlers for chat actions
   const handlers = {
     switchPanel: () => {
+
+      if (inputMode) return;
       // Cycle through panels: rooms -> messages -> users -> input -> rooms
       if (focusedPanel === 'rooms') setFocusedPanel('messages');
       else if (focusedPanel === 'messages') setFocusedPanel('users');
@@ -70,7 +72,6 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     },
     back: () => {
       if (inputMode) {
-        setInputMode(false);
         return;
       }
 
@@ -83,6 +84,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       onBack && onBack();
     },
     shareFile: () => {
+      if (inputMode) return;
       // Important fix: Make sure to clear input and show file explorer
       setInputValue('');
       setShowFileExplorer(true);
