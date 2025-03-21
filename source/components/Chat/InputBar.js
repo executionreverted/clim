@@ -47,7 +47,7 @@ const InputBar = ({ width = 100, isFocused = false }) => {
     setLocalInputValue('');
     setTimeout(() => {
       isSubmittingRef.current = false;
-    }, 300);
+    }, 50);
   }, [localInputValue]);
 
   return (

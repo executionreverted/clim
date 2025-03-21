@@ -165,10 +165,10 @@ const FilePreview = ({
     if (!selectedFile || selectedFile.isDirectory || !fileContent) return;
 
     try {
-      if (key.ctrl && key.upArrow) {
+      if (input == 'j') {
         // Scroll preview up
         setPreviewScrollOffset(Math.max(0, previewScrollOffset - 1));
-      } else if (key.ctrl && key.downArrow) {
+      } else if (input == 'k') {
         // Scroll preview down
         setPreviewScrollOffset(Math.min(
           Math.max(0, totalLines - maxPreviewLines),
