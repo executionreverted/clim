@@ -1,10 +1,11 @@
 // components/FileExplorer/index.js
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import FileList from './FileList.js';
 import FilePreview from './FilePreview.js';
 import NavigationHelp from './NavigationHelp.js';
 import { FileExplorerProvider, useFileExplorer } from '../../contexts/FileExplorerContext.js';
+import useKeymap from '../../hooks/useKeymap.js';
 
 // Direct import for 'open' package
 import open from 'open';
@@ -21,16 +22,16 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
     setSelectedIndex,
     visibleStartIndex,
     setVisibleStartIndex,
-    error,
-    previewScrollOffset,
-    setPreviewScrollOffset,
     navigateToParent,
     navigateToDirectory,
     goBack,
     selectFile,
     toggleFileSelection,
+    openFileInExplorer,
+    previewScrollOffset,
+    setPreviewScrollOffset,
     selectedFiles,
-    openFileInExplorer
+    error
   } = useFileExplorer();
 
   // Calculate maximum visible files based on terminal height
@@ -61,9 +62,9 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
     }
   };
 
-  // Handle file list navigation
-  useInput((input, key) => {
-    if (key.upArrow) {
+  // Define keymap handlers
+  const handlers = {
+    navigateUp: () => {
       const newIndex = Math.max(-1, selectedIndex - 1);
       setSelectedIndex(newIndex);
 
@@ -71,7 +72,8 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       if (newIndex < visibleStartIndex) {
         setVisibleStartIndex(Math.max(0, newIndex));
       }
-    } else if (key.downArrow) {
+    },
+    navigateDown: () => {
       const newIndex = Math.min(files.length - 1, selectedIndex + 1);
       setSelectedIndex(newIndex);
 
@@ -79,12 +81,14 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       if (newIndex >= visibleStartIndex + MAX_VISIBLE_FILES) {
         setVisibleStartIndex(newIndex - MAX_VISIBLE_FILES + 1);
       }
-    } else if (key.pageUp) {
+    },
+    pageUp: () => {
       // Page up: move selection up by page size
       const newIndex = Math.max(-1, selectedIndex - MAX_VISIBLE_FILES);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, newIndex - Math.floor(MAX_VISIBLE_FILES / 2)));
-    } else if (key.pageDown) {
+    },
+    pageDown: () => {
       // Page down: move selection down by page size
       const newIndex = Math.min(files.length - 1, selectedIndex + MAX_VISIBLE_FILES);
       setSelectedIndex(newIndex);
@@ -92,7 +96,8 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
         files.length - MAX_VISIBLE_FILES,
         newIndex - Math.floor(MAX_VISIBLE_FILES / 2)
       )));
-    } else if (key.return) {
+    },
+    openDir: () => {
       if (selectedIndex === -1) {
         // Go to parent directory when ".." is selected
         navigateToParent();
@@ -111,28 +116,41 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
           }
         }
       }
-    } else if (input === 'b') {
-      goBack();
-    } else if (input === 'h' || key.delete) {
-      navigateToParent();
-    } else if (input === 'o') {
-      // 'o' to open file in system default application
-      handleOpenFile();
-    } else if (input === 'p' && mode === 'browse') {
-      // 'p' to pick/select a file in browse mode
-      if (selectedIndex >= 0 && files[selectedIndex] && !files[selectedIndex].isDirectory) {
+    },
+    parentDir: () => navigateToParent(),
+    goBack: () => goBack(),
+    previewScrollUp: () => {
+      const content = files[selectedIndex] ? files[selectedIndex].content : '';
+      const totalLines = content ? content.split('\n').length : 0;
+      setPreviewScrollOffset(Math.max(0, previewScrollOffset - 1));
+    },
+    previewScrollDown: () => {
+      const content = files[selectedIndex] ? files[selectedIndex].content : '';
+      const totalLines = content ? content.split('\n').length : 0;
+      setPreviewScrollOffset(Math.min(
+        Math.max(0, totalLines - MAX_VISIBLE_FILES),
+        previewScrollOffset + 1
+      ));
+    },
+    openFile: () => handleOpenFile(),
+    pickFile: () => {
+      if (mode === 'browse' && selectedIndex >= 0 && files[selectedIndex] && !files[selectedIndex].isDirectory) {
         selectFile(files[selectedIndex]);
       }
-    } else if (input === ' ' && multiSelect) {
-      // Space to toggle selection in multiselect mode
-      if (selectedIndex >= 0 && files[selectedIndex]) {
+    },
+    toggleSelection: () => {
+      if (multiSelect && selectedIndex >= 0 && files[selectedIndex]) {
         toggleFileSelection(files[selectedIndex]);
       }
-    }
-  });
+    },
+    exit: () => goBack()
+  };
+
+  // Use the keymap hook
+  useKeymap('fileExplorer', handlers, { isActive: true });
 
   // Get the currently selected file
-  const selectedFile = files[selectedIndex];
+  const selectedFile = selectedIndex >= 0 ? files[selectedIndex] : undefined;
 
   return (
     <Box
@@ -157,7 +175,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       {multiSelect && (
         <Box width={terminalWidth} paddingX={1}>
           <Text color="green">
-            Selected: {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''}
+            Selected: {selectedFiles?.length || 0} file{(selectedFiles?.length || 0) !== 1 ? 's' : ''}
           </Text>
         </Box>
       )}

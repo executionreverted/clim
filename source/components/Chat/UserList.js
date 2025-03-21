@@ -1,26 +1,32 @@
 // components/Chat/UserList.js
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
+import useKeymap from '../../hooks/useKeymap.js';
 
 const UserList = ({ width = 20, height = 20, isFocused = false }) => {
-  const { activeRoom } = useChat();
+  const { activeRoom, inputMode } = useChat();
   const users = activeRoom.users || [];
 
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxVisibleUsers = Math.max(3, height - 3);
 
-  useInput((input, key) => {
-    if (!isFocused) return;
-
-    if (key.upArrow) {
+  // Define handlers for user list navigation
+  const handlers = {
+    navigateUp: () => {
       setScrollOffset(Math.max(0, scrollOffset - 1));
-    } else if (key.downArrow) {
+    },
+    navigateDown: () => {
       setScrollOffset(Math.min(
         Math.max(0, users.length - maxVisibleUsers),
         scrollOffset + 1
       ));
     }
+  };
+
+  // Use the keymap hook
+  useKeymap('chat', handlers, {
+    isActive: isFocused && !inputMode
   });
 
   const visibleUsers = users.slice(

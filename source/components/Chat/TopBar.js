@@ -2,9 +2,14 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
+import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
 
 const TopBar = ({ width = 100 }) => {
   const { activeRoom, focusedPanel } = useChat();
+
+  // Get key binding descriptions
+  const contextBindings = getBindingsForContext('chat');
+  const switchPanelKey = getBindingDescription(contextBindings.switchPanel);
 
   return (
     <Box
@@ -24,7 +29,7 @@ const TopBar = ({ width = 100 }) => {
       <Box width={width - 2} justifyContent="center">
         <Text color="gray" wrap="truncate">
           Currently focused: <Text color="cyan">{focusedPanel}</Text> |
-          Tab to navigate between panels
+          {switchPanelKey} to navigate between panels
         </Text>
       </Box>
     </Box>

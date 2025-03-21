@@ -79,6 +79,8 @@ export const FileExplorerProvider = ({ children, initialPath, onFileSelect, onBa
   const toggleFileSelection = (file) => {
     if (!file || file.isDirectory) return;
 
+    console.log('SELECTING ', file)
+
     const isAlreadySelected = selectedFiles.some(f => f.path === file.path);
 
     if (isAlreadySelected) {

@@ -4,10 +4,20 @@ import { Box, useStdout } from 'ink';
 import { ChatProvider, useChat } from '../../contexts/ChatContext.js';
 import ChatLayout from './ChatLayout.js';
 import FileExplorer from '../FileExplorer/index.js';
+import useKeymap from '../../hooks/useKeymap.js';
 
 // Inner component that can access the chat context
 const ChatContent = ({ width, height }) => {
   const { showFileExplorer, setShowFileExplorer, handleFileSelect } = useChat();
+
+  // Define handlers for file explorer in chat
+  const handlers = {
+    back: () => setShowFileExplorer(false),
+    exit: () => setShowFileExplorer(false)
+  };
+
+  // Use keymap only when file explorer is shown
+  useKeymap('global', handlers, { isActive: showFileExplorer });
 
   if (showFileExplorer) {
     return (

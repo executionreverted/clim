@@ -1,7 +1,9 @@
 // components/Chat/RoomList.js
-import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
+import useKeymap from '../../hooks/useKeymap.js';
+import { getBindingDescription } from '../../utils/keymap.js';
 
 const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
   const {
@@ -20,7 +22,7 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
   const maxVisibleItems = Math.max(3, height - 3);
 
   // Update highlighted room when active room changes
-  React.useEffect(() => {
+  useEffect(() => {
     const index = rooms.findIndex(room => room.id === activeRoomId);
     if (index !== -1) {
       setHighlightedIndex(index);
@@ -34,10 +36,9 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
     }
   }, [activeRoomId, rooms, scrollOffset, maxVisibleItems]);
 
-  useInput((input, key) => {
-    if (!isFocused || inputMode) return;
-
-    if (key.upArrow) {
+  // Define handlers for room navigation
+  const handlers = {
+    navigateUp: () => {
       const newIndex = Math.max(0, highlightedIndex - 1);
       setHighlightedIndex(newIndex);
       setActiveRoomId(rooms[newIndex].id);
@@ -46,7 +47,8 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
       if (newIndex < scrollOffset) {
         setScrollOffset(newIndex);
       }
-    } else if (key.downArrow) {
+    },
+    navigateDown: () => {
       const newIndex = Math.min(rooms.length - 1, highlightedIndex + 1);
       setHighlightedIndex(newIndex);
       setActiveRoomId(rooms[newIndex].id);
@@ -56,7 +58,15 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
         setScrollOffset(newIndex - maxVisibleItems + 1);
       }
     }
+  };
+
+  // Use the keymap hook
+  const { contextBindings } = useKeymap('chat', handlers, {
+    isActive: isFocused && !inputMode
   });
+
+  // Get human-readable key for adding a room
+  const addRoomKey = getBindingDescription(contextBindings.addRoom);
 
   const visibleRooms = rooms.slice(scrollOffset, scrollOffset + maxVisibleItems);
 
@@ -113,7 +123,7 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
           {isFocused && (
             <Box marginTop={1}>
               <Text color="gray" italic>
-                Press 'a' to add room
+                Press '{addRoomKey}' to add room
               </Text>
             </Box>
           )}

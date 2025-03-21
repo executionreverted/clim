@@ -1,5 +1,6 @@
-// contexts/ChatContext.js - Updated for multiselect file handling
+// contexts/ChatContext.js - Updated with keymap support
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { matchesKeyBinding, getBindingsForContext } from '../utils/keymap.js';
 
 const ChatContext = createContext();
 
@@ -53,9 +54,15 @@ export const ChatProvider = ({ children, onBack }) => {
 
   const activeRoom = rooms.find(room => room.id === activeRoomId) || rooms[0];
 
+  // Get chat keybindings for reference
+  const chatBindings = getBindingsForContext('chat');
+
   // Updated to handle multiple file selection
   const handleFileSelect = (files) => {
     setShowFileExplorer(false);
+
+    // Guard against undefined or null
+    if (!files) return;
 
     // If files is an array (multiselect) vs single file object
     const filesArray = Array.isArray(files) ? files : [files];
@@ -84,6 +91,7 @@ export const ChatProvider = ({ children, onBack }) => {
       });
 
       setRooms(updatedRooms);
+      console.log(`Shared file: ${file.name}`); // Debug log
     } else {
       // Multiple files message
       const totalSize = filesArray.reduce((sum, file) => sum + file.size, 0);
@@ -115,9 +123,9 @@ export const ChatProvider = ({ children, onBack }) => {
       });
 
       setRooms(updatedRooms);
+      console.log(`Shared ${filesArray.length} files`); // Debug log
     }
   };
-
   const sendMessage = (text) => {
     if (!text.trim()) return;
 
@@ -164,17 +172,22 @@ export const ChatProvider = ({ children, onBack }) => {
       return true;
     }
 
-    // Check for Shift+T key combination
-    if (key && key.shift && input === 'T') {
+    // Check for shareFile key binding
+    if (chatBindings.shareFile &&
+      matchesKeyBinding({ input, key, ...key }, chatBindings.shareFile)) {
       setShowFileExplorer(true);
       return true;
     }
 
-    if (focusedPanel === 'rooms' && input === 'a') {
+    // Check for addRoom key binding
+    if (focusedPanel === 'rooms' &&
+      chatBindings.addRoom &&
+      matchesKeyBinding({ input, key, ...key }, chatBindings.addRoom)) {
       setInputMode(true);
       setInputValue('');
       return true; // Handled
     }
+
     return false; // Not handled
   };
 

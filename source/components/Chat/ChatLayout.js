@@ -1,12 +1,14 @@
-// components/Chat/ChatLayout.js
+// Fixed ChatLayout.js to properly handle file sharing
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import RoomList from './RoomList.js';
 import MessageList from './MessageList.js';
 import UserList from './UserList.js';
 import InputBar from './InputBar.js';
 import TopBar from './TopBar.js';
+import useKeymap from '../../hooks/useKeymap.js';
+import { getBindingDescription } from '../../utils/keymap.js';
 
 const ChatLayout = ({ width = 100, height = 24 }) => {
   const {
@@ -18,7 +20,8 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
     setInputValue,
     handleKeyInput,
     handleInputSubmit,
-    onBack
+    onBack,
+    setShowFileExplorer
   } = useChat();
 
   // Calculate panel widths based on terminal size
@@ -33,14 +36,29 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
   const inputBarHeight = 3;
   const contentHeight = Math.max(10, height - topBarHeight - bottomHelpHeight - inputBarHeight - 2);
 
-  useInput((input, key) => {
-    // First, check for custom key handlers (like Shift+T or /send)
-    if (handleKeyInput(input, key)) {
-      return;
-    }
+  // Define handlers for chat actions
+  const handlers = {
+    switchPanel: () => {
+      // Cycle through panels: rooms -> messages -> users -> input -> rooms
+      if (focusedPanel === 'rooms') setFocusedPanel('messages');
+      else if (focusedPanel === 'messages') setFocusedPanel('users');
+      else if (focusedPanel === 'users') setFocusedPanel('input');
+      else setFocusedPanel('rooms');
+    },
+    focusInput: () => {
+      if (inputMode) {
+        if (handleInputSubmit()) {
+          setInputMode(false);
+        }
+        return;
+      }
 
-    // Global escape key handling
-    if (key.escape) {
+      if (focusedPanel === 'input' || focusedPanel === 'messages') {
+        setInputMode(true);
+        return;
+      }
+    },
+    back: () => {
       if (inputMode) {
         setInputMode(false);
         return;
@@ -53,50 +71,34 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
 
       // Exit chat if no input mode and not focused on input
       onBack && onBack();
-      return;
-    }
+    },
+    shareFile: () => {
+      // Important fix: Make sure to clear input and show file explorer
+      setInputValue('');
+      setShowFileExplorer(true);
+    },
+    exit: () => onBack && onBack()
+  };
 
-    // Global tab key for panel navigation
-    if (key.tab) {
-      // Cycle through panels: rooms -> messages -> users -> input -> rooms
-      if (focusedPanel === 'rooms') setFocusedPanel('messages');
-      else if (focusedPanel === 'messages') setFocusedPanel('users');
-      else if (focusedPanel === 'users') setFocusedPanel('input');
-      else setFocusedPanel('rooms');
-      return;
-    }
-
-    // Handle enter key for focusing input or submitting
-    if (key.return) {
-      if (inputMode) {
-        if (handleInputSubmit()) {
-          setInputMode(false);
-        }
-        return;
-      }
-
-      if (focusedPanel === 'input' || focusedPanel === 'messages') {
+  // Get additional keybindings from the ChatContext
+  const chatContextHandlers = {
+    addRoom: () => {
+      if (focusedPanel === 'rooms') {
         setInputMode(true);
-        return;
+        setInputValue('');
       }
     }
+  };
 
-    // Handle input mode
-    if (inputMode) {
-      if (key.backspace || key.delete) {
-        setInputValue(prev => prev.slice(0, -1));
-        return;
-      }
+  // Use the keymap hook
+  const { contextBindings } = useKeymap('chat', { ...handlers, ...chatContextHandlers });
 
-      // Only accept printable characters
-      if (input && input.length === 1 && input.charCodeAt(0) >= 32) {
-        setInputValue(prev => prev + input);
-        return;
-      }
-
-      return;
-    }
-  });
+  // Get human-readable key descriptions for help text
+  const switchPanelKey = getBindingDescription(contextBindings.switchPanel);
+  const focusInputKey = getBindingDescription(contextBindings.focusInput);
+  const backKey = getBindingDescription(contextBindings.back);
+  const shareFileKey = getBindingDescription(contextBindings.shareFile);
+  const addRoomKey = getBindingDescription(contextBindings.addRoom);
 
   return (
     <Box
@@ -138,9 +140,9 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
 
       <Box width={width} height={bottomHelpHeight}>
         <Text dimColor>
-          [Tab] Switch panels | [Enter] Focus input | [Esc] Back/Exit |
-          {focusedPanel === 'rooms' && ' [a] Add room | '}
-          [Shift+T] or /send: Share file | Press ENTER to chat
+          [{switchPanelKey}] Switch panels | [{focusInputKey}] Focus input | [{backKey}] Back/Exit |
+          {focusedPanel === 'rooms' && ` [${addRoomKey}] Add room | `}
+          [{shareFileKey}] or /send: Share file | Press ENTER to chat
         </Text>
       </Box>
     </Box>

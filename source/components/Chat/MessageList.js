@@ -1,8 +1,9 @@
 // components/Chat/MessageList.js
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
+import useKeymap from '../../hooks/useKeymap.js';
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
@@ -93,24 +94,33 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   // Keep track of previous message count
   const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
 
-  // Handle keyboard navigation
-  useInput((input, key) => {
-    if (!isFocused || inputMode) return;
-    if (key.upArrow) {
+  // Define keymap handlers for navigation
+  const handlers = {
+    navigateUp: () => {
       setScrollOffset(prev => Math.min(maxScrollOffset, prev + 1));
-    } else if (key.downArrow) {
+    },
+    navigateDown: () => {
       setScrollOffset(prev => Math.max(0, prev - 1));
-    } else if (key.pageUp) {
+    },
+    pageUp: () => {
       setScrollOffset(prev => Math.min(maxScrollOffset, prev + Math.floor(availableHeight / 2)));
-    } else if (key.pageDown) {
+    },
+    pageDown: () => {
       setScrollOffset(prev => Math.max(0, prev - Math.floor(availableHeight / 2)));
-    } else if (input === 'g') {
+    },
+    scrollToTop: () => {
       // Go to top (oldest messages)
       setScrollOffset(maxScrollOffset);
-    } else if (input === 'G') {
+    },
+    scrollToBottom: () => {
       // Go to bottom (newest messages)
       setScrollOffset(0);
     }
+  };
+
+  // Use the keymap hook
+  useKeymap('chat', handlers, {
+    isActive: isFocused && !inputMode
   });
 
   // Get visible lines based on current scroll offset
@@ -158,7 +168,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
               } else {
                 return (
                   <Box overflow="hidden" key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text).replace('␍', '\n')}</Text>
+                    <Text color={line.isFileMessage ? "green" : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
                   </Box>
                 );
               }
