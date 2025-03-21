@@ -65,20 +65,36 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
   // Define keymap handlers
   const handlers = {
     navigateUp: () => {
-      const newIndex = Math.max(-1, selectedIndex - 1);
+      // If at the first item, wrap around to the last item (-1 is parent directory)
+      const newIndex = selectedIndex <= -1
+        ? files.length - 1
+        : Math.max(-1, selectedIndex - 1);
+
       setSelectedIndex(newIndex);
 
       // Update visible window if selection would go out of view
       if (newIndex < visibleStartIndex) {
-        setVisibleStartIndex(Math.max(0, newIndex));
+        // If wrapping to the end, show the last page
+        if (selectedIndex <= -1 && files.length > MAX_VISIBLE_FILES) {
+          setVisibleStartIndex(Math.max(0, files.length - MAX_VISIBLE_FILES));
+        } else {
+          setVisibleStartIndex(Math.max(0, newIndex));
+        }
       }
     },
     navigateDown: () => {
-      const newIndex = Math.min(files.length - 1, selectedIndex + 1);
+      // If at the last item, wrap around to parent directory or first item
+      const newIndex = selectedIndex >= files.length - 1
+        ? -1
+        : Math.min(files.length - 1, selectedIndex + 1);
+
       setSelectedIndex(newIndex);
 
       // Update visible window if selection would go out of view
-      if (newIndex >= visibleStartIndex + MAX_VISIBLE_FILES) {
+      if (newIndex === -1) {
+        // When wrapping to the top, always show from the beginning
+        setVisibleStartIndex(0);
+      } else if (newIndex >= visibleStartIndex + MAX_VISIBLE_FILES) {
         setVisibleStartIndex(newIndex - MAX_VISIBLE_FILES + 1);
       }
     },
@@ -158,13 +174,13 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       width={terminalWidth}
       height={terminalHeight}
     >
-      <Box width={terminalWidth} paddingX={1}>
-        <Text bold wrap="truncate">
-          File Explorer {mode === 'picker' ? (multiSelect ? '(Select files with SPACE, confirm with ENTER)' : '(Select a file)') : ''}
+      <Box alignSelf="end" width={terminalWidth} paddingX={1}>
+        <Text flexGrow={1} bold wrap="truncate">
+          File Explorer {mode === 'picker' ? (multiSelect ? 'SPACE select | ENTER confirm' : '(Select a file)') : ''}
         </Text>
       </Box>
 
-      <Box width={terminalWidth} paddingX={1}>
+      <Box flexGrow={1} width={terminalWidth} paddingX={1}>
         <Text wrap="truncate">Path: <Text color="blue">{
           currentPath.length > terminalWidth - 10
             ? '...' + currentPath.substring(currentPath.length - (terminalWidth - 10))

@@ -31,20 +31,20 @@ const App = () => {
   };
 
   // Use the keymap hook for global actions
-  useKeymap('global', handlers);
+  useKeymap('global', handlers, { isActive: currentPage == "welcome" });
 
   // Update terminal dimensions if they change
   useEffect(() => {
     const handleResize = () => {
-      setTerminalWidth(stdout.columns);
-      setTerminalHeight(stdout.rows);
+      setTerminalWidth(stdout.columns - 1);
+      setTerminalHeight(stdout.rows - 1);
     };
 
     stdout.on('resize', handleResize);
     return () => {
       stdout.off('resize', handleResize);
     };
-  }, [stdout]);
+  }, []);
 
   return (
     <Box
@@ -69,15 +69,15 @@ const App = () => {
       )}
 
       {/* Fixed escape info at bottom */}
-      <Box
-        position="absolute"
-        bottom={0}
-        left={0}
-        height={1}
-        paddingX={1}
-      >
-        <Text dimColor>Press Esc or Ctrl+q to exit</Text>
-      </Box>
+      {/* <Box */}
+      {/*   position="absolute" */}
+      {/*   bottom={0} */}
+      {/*   left={0} */}
+      {/*   height={1} */}
+      {/*   paddingX={1} */}
+      {/* > */}
+      {/*   <Text dimColor>{ }</Text> */}
+      {/* </Box> */}
     </Box>
   );
 };

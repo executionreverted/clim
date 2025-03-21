@@ -16,7 +16,6 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     setFocusedPanel,
     inputMode,
     setInputMode,
-    inputValue,
     setInputValue,
     handleInputSubmit,
     onBack,
@@ -134,7 +133,6 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       <InputBar
         width={width}
         isFocused={focusedPanel === 'input' || inputMode}
-        value={inputValue}
       />
 
       <Box width={width} height={bottomHelpHeight}>

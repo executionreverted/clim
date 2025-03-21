@@ -256,7 +256,7 @@ const FilePreview = ({
           )}
 
           {visibleLines.map((line, i) => (
-            <Box key={i} width={width - 8}>
+            <Box key={"line-" + i} width={width - 8}>
               <TextPreviewLine line={sanitizeTextForTerminal(line)} />
             </Box>
           ))}
