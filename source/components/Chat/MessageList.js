@@ -75,6 +75,15 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
         isFileMessage: message.text && message.text.startsWith('📎')
       });
     });
+    const unique = message.id + 1000000
+    processedLines.push({
+      type: 'content',
+      text: " ",
+      messageId: unique,
+      lineIndex: unique,
+      hasAttachment: false,
+      isFileMessage: message.text && message.text.startsWith('📎')
+    });
   });
 
   const totalLines = processedLines.length;
