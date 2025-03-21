@@ -22,19 +22,28 @@ export function useKeymap(context, handlers = {}, options = {}) {
   // Get bindings for the current context (including global)
   const contextBindings = getBindingsForContext(context, keymapRef.current);
 
-  // Set up input handling
   useInput((input, key) => {
     if (!isActive) return;
+
     // Check each binding to see if it matches
-    if (input == " ") key.space = true;
-    Object.entries(contextBindings).forEach(([action, binding]) => {
+    if (input === " ") key.space = true;
+
+    // Debug log to see what keys are being pressed (uncomment for debugging)
+    // console.log('Key pressed:', { input, key, contextBindings, handlers });
+
+    for (const [action, binding] of Object.entries(contextBindings)) {
       if (matchesKeyBinding({ input, key, ...key }, binding)) {
         // If we have a handler for this action, call it
         if (handlers[action]) {
-          handlers[action]();
+          // If the handler returns true, it means it handled the event
+          // and we should not continue processing other handlers
+          const handled = handlers[action]();
+          if (handled === true) {
+            return;
+          }
         }
       }
-    });
+    }
   });
 
   return {

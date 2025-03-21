@@ -12,6 +12,7 @@ const DEFAULT_KEYMAP = {
   welcome: {
     startChat: { key: 'c', description: 'Start chat' },
     startExplorer: { key: 'e', description: 'Start file explorer' },
+    startOptions: { key: 'o', description: 'Open options' },
   },
   fileExplorer: {
     navigateUp: { key: 'upArrow', description: 'Navigate up' },
@@ -38,6 +39,14 @@ const DEFAULT_KEYMAP = {
     scrollToTop: { key: 'g', description: 'Scroll to oldest messages' },
     scrollToBottom: { key: 'G', shift: true, description: 'Scroll to newest messages' },
   },
+  options: {
+    nextTab: { key: 'rightArrow', description: 'Next tab' },
+    previousTab: { key: 'leftArrow', description: 'Previous tab' },
+    navigateUp: { key: 'upArrow', description: 'Navigate up' },
+    navigateDown: { key: 'downArrow', description: 'Navigate down' },
+    toggleOption: { key: 'return', description: 'Toggle option' },
+    back: { key: 'escape', description: 'Go back' },
+  }
 };
 
 // Config file path

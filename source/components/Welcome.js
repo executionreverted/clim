@@ -11,6 +11,7 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
   const handlers = {
     startChat: () => onStart('chat'),
     startExplorer: () => onStart('explorer'),
+    startOptions: () => onStart('options'),
     exit: () => process.exit(0),
   };
 
@@ -20,6 +21,7 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
   // Get human-readable key descriptions
   const chatKey = getBindingDescription(contextBindings.startChat);
   const explorerKey = getBindingDescription(contextBindings.startExplorer);
+  const optionsKey = getBindingDescription(contextBindings.startOptions);
   const exitKey = getBindingDescription(contextBindings.exit);
 
   return (
@@ -45,6 +47,7 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
       <Box marginY={2} padding={1} borderStyle="round" borderColor="green">
         <Text>Press <Text color="green" bold>{chatKey}</Text> to start p2p chat</Text>
         <Text>Press <Text color="green" bold>{explorerKey}</Text> to start exploring files</Text>
+        <Text>Press <Text color="green" bold>{optionsKey}</Text> to open options</Text>
         <Text>Press <Text color="green" bold>{exitKey}</Text> to exit</Text>
       </Box>
 
