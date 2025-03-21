@@ -1,45 +1,49 @@
 // source/components/Options/ThemeTab.js
-import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text } from 'ink';
 import useKeymap from '../../hooks/useKeymap.js';
+import { useTheme } from '../../contexts/ThemeContext.js';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
-// Available themes
-const themes = [
-  { id: 'default', name: 'Default', description: 'Standard terminal colors' },
-  { id: 'dark', name: 'Dark', description: 'Optimized for dark terminals' },
-  { id: 'light', name: 'Light', description: 'Optimized for light terminals' },
-  { id: 'monochrome', name: 'Monochrome', description: 'Black and white only' },
-  { id: 'cyberpunk', name: 'Cyberpunk', description: 'Neon colors on dark background' },
-];
-
-// Theme settings
 const ThemeTab = ({ setIsInNested, width, height }) => {
-  // Theme settings with default values
-  const [settings, setSettings] = useState({
-    theme: 'default',
-    showHelpBoxes: true,
-    useColoredIcons: true,
-    showBorders: true,
-    boldText: true,
-  });
-
-  // Track selected option and current mode
+  // Get theme context
+  const {
+    availableThemes,
+    setTheme,
+    updateThemeSettings,
+    saveTheme,
+    hasChanges,
+    refreshThemes
+  } = useTheme();
+  const currentTheme = useThemeUpdate()
+  // Local component state
   const [selectedOption, setSelectedOption] = useState(0);
-  const [mode, setMode] = useState('settings'); // 'settings' or 'themes'
+  const [mode, setMode] = useState('settings'); // 'settings', 'themes', or 'preview'
+  const [messageText, setMessageText] = useState('');
 
-  // Settings keys for navigation
-  const settingKeys = ['theme', 'showHelpBoxes', 'useColoredIcons', 'showBorders', 'boldText'];
+  // List of settings for the selected theme
+  const settingKeys = Object.keys(currentTheme.settings);
 
-  // Set up a direct handler for escape key in theme selection mode
-  // This needs to run before other key handlers to prevent bubbling
-  useInput((input, key) => {
-    if (key.escape && mode === 'themes') {
-      setMode('settings');
-      setSelectedOption(0);
-      // This effectively cancels theme selection
-      return;
-    }
-  }, { isActive: true });
+  // Effect to manage the nested state
+  useEffect(() => {
+    setIsInNested(mode !== 'settings');
+
+    return () => {
+      // Clean up when component unmounts
+      if (hasChanges) {
+        saveTheme();
+      }
+    };
+  }, [mode, hasChanges, saveTheme, setIsInNested]);
+
+  // Display a temporary message
+  const showMessage = (message, duration = 3000) => {
+    setMessageText(message);
+    setTimeout(() => setMessageText(''), duration);
+  };
 
   // Define handlers for theme tab
   const handlers = {
@@ -52,34 +56,40 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
     },
     navigateDown: () => {
       if (mode === 'settings') {
-        setSelectedOption((prev) => Math.min(settingKeys.length - 1, prev + 1));
+        setSelectedOption((prev) => Math.min(settingKeys.length, prev + 1));
       } else if (mode === 'themes') {
-        setSelectedOption((prev) => Math.min(themes.length - 1, prev + 1));
+        setSelectedOption((prev) => Math.min(availableThemes.length - 1, prev + 1));
       }
     },
     toggleOption: () => {
       if (mode === 'settings') {
-        const key = settingKeys[selectedOption];
-
-        if (key === 'theme') {
-          setIsInNested(true)
+        // Special handling for theme selection option
+        if (selectedOption === 0) {
           // Switch to theme selection mode
           setMode('themes');
-          setSelectedOption(themes.findIndex(t => t.id === settings.theme) || 0);
+          const currentThemeIndex = availableThemes.findIndex(t => t.id === currentTheme.id);
+          setSelectedOption(currentThemeIndex >= 0 ? currentThemeIndex : 0);
+        } else if (selectedOption === settingKeys.length) {
+          // Save theme option
+          const success = saveTheme();
+          showMessage(success ? 'Theme saved successfully!' : 'Failed to save theme.');
         } else {
           // Toggle boolean settings
-          setSettings(prev => ({
-            ...prev,
-            [key]: !prev[key]
-          }));
+          const key = settingKeys[selectedOption - 1]; // -1 because first option is theme selection
+          updateThemeSettings({ [key]: !currentTheme.settings[key] });
         }
       } else if (mode === 'themes') {
         // Select theme and go back to settings
-        setSettings(prev => ({
-          ...prev,
-          theme: themes[selectedOption].id
-        }));
-        setIsInNested(false)
+        if (selectedOption >= 0 && selectedOption < availableThemes.length) {
+          // Apply theme immediately
+          const themeId = availableThemes[selectedOption].id;
+          setTheme(themeId);
+
+          // Save changes to make them persist
+          saveTheme();
+
+          showMessage(`Theme set to ${availableThemes[selectedOption].name}`);
+        }
         setMode('settings');
         setSelectedOption(0); // Back to first settings option
       }
@@ -89,9 +99,62 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
         // Go back to settings mode without changing theme
         setMode('settings');
         setSelectedOption(0);
+        return true; // Prevent bubbling to parent
       }
-      // For regular settings mode, let the parent handle back
-      return false;
+      return false; // Let parent handle in settings mode
+    },
+    refreshThemes: () => {
+      refreshThemes();
+      showMessage('Refreshed available themes');
+    },
+    createExampleTheme: () => {
+      const THEMES_DIR = path.join(os.homedir(), '.hyperchatters', 'themes');
+
+      // Create a basic example theme file
+      try {
+        if (!fs.existsSync(THEMES_DIR)) {
+          fs.mkdirSync(THEMES_DIR, { recursive: true });
+        }
+
+        const examplePath = path.join(THEMES_DIR, `example-${Date.now()}.json`);
+
+        const exampleTheme = {
+          id: `custom-${Date.now()}`,
+          name: 'My Custom Theme',
+          description: 'A custom theme created as an example',
+          colors: {
+            primary: 'magenta',
+            secondary: 'cyan',
+            tertiary: 'yellow',
+            success: 'green',
+            warning: 'yellow',
+            error: 'red',
+            info: 'blue',
+            text: {
+              primary: 'white',
+              secondary: 'gray',
+              muted: 'dimGray'
+            },
+            border: {
+              active: 'magenta',
+              inactive: 'gray',
+              focus: 'cyan'
+            },
+            background: {
+              primary: undefined,
+              secondary: undefined,
+              highlight: undefined
+            }
+          },
+          settings: { ...currentTheme.settings }
+        };
+
+        fs.writeFileSync(examplePath, JSON.stringify(exampleTheme, null, 2));
+        refreshThemes();
+        showMessage(`Created example theme at ${examplePath}`);
+      } catch (err) {
+        showMessage(`Failed to create example theme: ${err.message}`);
+      }
     }
   };
 
@@ -106,15 +169,15 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
           <Text bold underline>Select Theme</Text>
         </Box>
 
-        {themes.map((theme, index) => {
+        {availableThemes.map((theme, index) => {
           const isSelected = index === selectedOption;
-          const isActive = theme.id === settings.theme;
+          const isActive = theme.id === currentTheme.id;
 
           return (
             <Box key={theme.id} marginY={1}>
               <Text>
                 {isSelected ? '>' : ' '}
-                <Text bold={isSelected || isActive}>
+                <Text bold={isSelected || isActive} color={isSelected ? 'cyan' : undefined}>
                   {theme.name}
                 </Text>
                 {isActive ? ' (active)' : ''}
@@ -129,6 +192,17 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
             Press 'T' to select a theme or 'Escape' to cancel
           </Text>
         </Box>
+
+        {messageText && (
+          <Box
+            marginTop={1}
+            padding={1}
+            borderStyle="round"
+            borderColor="yellow"
+          >
+            <Text color="yellow">{messageText}</Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -145,17 +219,17 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
         <Text>
           {selectedOption === 0 ? '>' : ' '} Theme:
           <Text color="cyan" bold={selectedOption === 0}>
-            {' '}{themes.find(t => t.id === settings.theme)?.name || 'Default'}
+            {' '}{currentTheme.name || 'Default'}
           </Text>
           <Text color="gray"> (Press T to change)</Text>
         </Text>
       </Box>
 
       {/* Boolean settings */}
-      {settingKeys.slice(1).map((key, index) => {
-        const actualIndex = index + 1;
+      {settingKeys.map((key, index) => {
+        const actualIndex = index + 1; // +1 because first option is theme selection
         const isSelected = actualIndex === selectedOption;
-        const value = settings[key];
+        const value = currentTheme.settings[key];
 
         // Format the key for display
         const displayName = key
@@ -174,26 +248,58 @@ const ThemeTab = ({ setIsInNested, width, height }) => {
         );
       })}
 
-      {/* Preview box */}
-      <Box
-        marginTop={2}
-        borderStyle={settings.showBorders ? "round" : "none"}
-        borderColor="cyan"
-        padding={1}
-      >
-        <Text bold={settings.boldText}>
-          Theme Preview:
-          <Text color={settings.useColoredIcons ? "green" : undefined}>
-            {' '}{settings.theme} theme
+      {/* Save option */}
+      <Box marginY={1}>
+        <Text>
+          {selectedOption === settingKeys.length ? '>' : ' '}
+          <Text color={hasChanges ? 'yellow' : 'green'} bold={selectedOption === settingKeys.length}>
+            Save Theme {hasChanges ? '(unsaved changes)' : ''}
           </Text>
         </Text>
       </Box>
 
-      <Box marginTop={1}>
-        <Text color="gray" italic>
-          Press 'T' to toggle options
+      {/* Preview box */}
+      <Box
+        marginTop={2}
+        borderStyle="round"
+        borderColor="cyan"
+        padding={1}
+      >
+        <Text bold>
+          Theme Preview:
+          <Text color={currentTheme.colors.primary}>
+            {' '}{currentTheme.name} theme
+          </Text>
+        </Text>
+        <Text>
+          Primary Color: <Text color={currentTheme.colors.primary}>■■■</Text>
+        </Text>
+        <Text>
+          Secondary Color: <Text color={currentTheme.colors.secondary}>■■■</Text>
+        </Text>
+        <Text>
+          Success: <Text color={currentTheme.colors.success}>■■■</Text> |
+          Warning: <Text color={currentTheme.colors.warning}>■■■</Text> |
+          Error: <Text color={currentTheme.colors.error}>■■■</Text>
         </Text>
       </Box>
+
+      <Box marginTop={1} flexDirection="row">
+        <Text color="gray" italic>
+          Press 'T' to toggle options | 'R' to refresh themes | 'E' to create example theme
+        </Text>
+      </Box>
+
+      {messageText && (
+        <Box
+          marginTop={1}
+          padding={1}
+          borderStyle="round"
+          borderColor="yellow"
+        >
+          <Text color="yellow">{messageText}</Text>
+        </Box>
+      )}
     </Box>
   );
 };

@@ -7,16 +7,20 @@ import Chat from './components/Chat/index.js';
 import Options from './components/Options/index.js';
 import useKeymap from './hooks/useKeymap.js';
 import { createExampleConfig } from './utils/keymap.js';
+import { ThemeProvider } from './contexts/ThemeContext.js';
+import { createThemeSystem } from './utils/theme.js';
 
+// Main App component
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
   const { stdout } = useStdout();
   const [terminalWidth, setTerminalWidth] = useState(stdout.columns || 100);
   const [terminalHeight, setTerminalHeight] = useState(stdout.rows || 24);
 
-  // Create example config file if it doesn't exist
+  // Create example config and theme files if they don't exist
   useEffect(() => {
     createExampleConfig();
+    createThemeSystem();
   }, []);
 
   // Define global keymap handlers
@@ -51,42 +55,33 @@ const App = () => {
   }, []);
 
   return (
-    <Box
-      flexDirection="column"
-      width={terminalWidth}
-      height={terminalHeight}
-    >
-      {currentPage === 'welcome' && (
-        <Welcome
-          onStart={(w) => setCurrentPage(w)}
-          width={terminalWidth}
-          height={terminalHeight}
-        />
-      )}
+    <ThemeProvider>
+      <Box
+        flexDirection="column"
+        width={terminalWidth}
+        height={terminalHeight}
+      >
+        {currentPage === 'welcome' && (
+          <Welcome
+            onStart={(w) => setCurrentPage(w)}
+            width={terminalWidth}
+            height={terminalHeight}
+          />
+        )}
 
-      {currentPage === 'explorer' && (
-        <FileExplorer onBack={() => setCurrentPage('welcome')} />
-      )}
+        {currentPage === 'explorer' && (
+          <FileExplorer onBack={() => setCurrentPage('welcome')} />
+        )}
 
-      {currentPage === 'chat' && (
-        <Chat onBack={() => setCurrentPage('welcome')} />
-      )}
+        {currentPage === 'chat' && (
+          <Chat onBack={() => setCurrentPage('welcome')} />
+        )}
 
-      {currentPage === 'options' && (
-        <Options onBack={() => setCurrentPage('welcome')} />
-      )}
-
-      {/* Fixed escape info at bottom */}
-      {/* <Box */}
-      {/*   position="absolute" */}
-      {/*   bottom={0} */}
-      {/*   left={0} */}
-      {/*   height={1} */}
-      {/*   paddingX={1} */}
-      {/* > */}
-      {/*   <Text dimColor>{ }</Text> */}
-      {/* </Box> */}
-    </Box>
+        {currentPage === 'options' && (
+          <Options onBack={() => setCurrentPage('welcome')} />
+        )}
+      </Box>
+    </ThemeProvider>
   );
 };
 
