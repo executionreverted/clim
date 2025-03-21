@@ -1,5 +1,5 @@
 // components/Chat/index.js
-import React, { useState, useEffect } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { Box, useStdout } from 'ink';
 import { ChatProvider, useChat } from '../../contexts/ChatContext.js';
 import ChatLayout from './ChatLayout.js';
@@ -7,7 +7,7 @@ import FileExplorer from '../FileExplorer/index.js';
 import useKeymap from '../../hooks/useKeymap.js';
 
 // Inner component that can access the chat context
-const ChatContent = ({ width, height }) => {
+const ChatContent = memo(({ width, height }) => {
   const { showFileExplorer, setShowFileExplorer, handleFileSelect } = useChat();
 
   // Define handlers for file explorer in chat
@@ -23,7 +23,7 @@ const ChatContent = ({ width, height }) => {
     return (
       <FileExplorer
         initialPath={process.cwd()}
-        onBack={() => setShowFileExplorer(false)}
+        onBack={handlers.back}
         onFileSelect={handleFileSelect}
         mode="picker"
         multiSelect={true} // Enable multiselect
@@ -37,7 +37,7 @@ const ChatContent = ({ width, height }) => {
       height={height}
     />
   );
-};
+});
 
 // Main chat component
 const Chat = ({ onBack }) => {

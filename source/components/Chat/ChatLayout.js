@@ -1,5 +1,5 @@
 // Fixed ChatLayout.js to properly handle file sharing
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import RoomList from './RoomList.js';
@@ -10,7 +10,7 @@ import TopBar from './TopBar.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
 
-const ChatLayout = ({ width = 100, height = 24 }) => {
+const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const {
     focusedPanel,
     setFocusedPanel,
@@ -18,7 +18,6 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
     setInputMode,
     inputValue,
     setInputValue,
-    handleKeyInput,
     handleInputSubmit,
     onBack,
     setShowFileExplorer
@@ -47,7 +46,7 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
     },
     focusInput: () => {
       if (inputMode) {
-        if (handleInputSubmit()) {
+        if (handleInputSubmit("")) {
           setInputMode(false);
         }
         return;
@@ -147,6 +146,6 @@ const ChatLayout = ({ width = 100, height = 24 }) => {
       </Box>
     </Box>
   );
-};
+});
 
 export default ChatLayout;

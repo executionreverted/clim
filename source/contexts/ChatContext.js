@@ -1,10 +1,24 @@
-// contexts/ChatContext.js - Updated with keymap support
-import React, { createContext, useContext, useState, useEffect } from 'react';
+// contexts/ChatContext.js - Optimized with memory management
+import React, { useRef, useEffect, createContext, useContext, useReducer, useCallback, useMemo } from 'react';
 import { matchesKeyBinding, getBindingsForContext } from '../utils/keymap.js';
 
-const ChatContext = createContext();
+// Define action types
+const ACTIONS = {
+  SET_ACTIVE_ROOM: 'SET_ACTIVE_ROOM',
+  ADD_ROOM: 'ADD_ROOM',
+  SET_INPUT_VALUE: 'SET_INPUT_VALUE',
+  SET_FOCUSED_PANEL: 'SET_FOCUSED_PANEL',
+  SET_INPUT_MODE: 'SET_INPUT_MODE',
+  SEND_MESSAGE: 'SEND_MESSAGE',
+  SET_SHOW_FILE_EXPLORER: 'SET_SHOW_FILE_EXPLORER',
+  SET_FILE_ATTACHMENTS: 'SET_FILE_ATTACHMENTS',
+  CLEAR_HISTORY: 'CLEAR_HISTORY',
+  PRUNE_MESSAGES: 'PRUNE_MESSAGES'
+};
 
-export const useChat = () => useContext(ChatContext);
+// Configuration
+const MAX_MESSAGES_PER_ROOM = 100; // Limit messages to prevent memory issues
+const MAX_MESSAGE_LENGTH = 10000; // Maximum length for a single message
 
 // Mock data for demo with multiline messages
 const MOCK_ROOMS = [
@@ -42,226 +56,373 @@ MOCK_ROOMS.forEach(room => {
   }
 });
 
+// Initial state
+const initialState = {
+  rooms: MOCK_ROOMS,
+  activeRoomId: MOCK_ROOMS[0].id,
+  inputValue: '',
+  focusedPanel: 'messages', // 'rooms', 'messages', 'users', 'input'
+  inputMode: false,
+  showFileExplorer: false,
+  pendingAttachments: null
+};
+
+// Helper function to truncate messages if they exceed the limit
+const pruneRoomMessages = (room) => {
+  if (room.messages.length > MAX_MESSAGES_PER_ROOM) {
+    // Keep only the most recent messages
+    const newMessages = room.messages.slice(-MAX_MESSAGES_PER_ROOM);
+    return { ...room, messages: newMessages };
+  }
+  return room;
+};
+
+// Chat reducer
+const chatReducer = (state, action) => {
+  switch (action.type) {
+    case ACTIONS.SET_ACTIVE_ROOM:
+      return {
+        ...state,
+        activeRoomId: action.payload
+      };
+
+    case ACTIONS.ADD_ROOM:
+      const newRoom = {
+        id: `room-${Date.now()}`,
+        name: action.payload,
+        messages: [],
+        users: ['You']
+      };
+      return {
+        ...state,
+        rooms: [...state.rooms, newRoom],
+        activeRoomId: newRoom.id
+      };
+
+    case ACTIONS.SET_INPUT_VALUE:
+      // Limit input length to prevent memory issues
+      const truncatedInput = typeof action.payload === 'string' &&
+        action.payload.length > MAX_MESSAGE_LENGTH ?
+        action.payload.substring(0, MAX_MESSAGE_LENGTH) :
+        action.payload;
+
+      return {
+        ...state,
+        inputValue: truncatedInput
+      };
+
+    case ACTIONS.SET_FOCUSED_PANEL:
+      return {
+        ...state,
+        focusedPanel: action.payload
+      };
+
+    case ACTIONS.SET_INPUT_MODE:
+      return {
+        ...state,
+        inputMode: action.payload
+      };
+
+    case ACTIONS.SEND_MESSAGE:
+      const { text, roomId } = action.payload;
+      const newMessage = {
+        id: `${roomId}-msg-${Date.now()}`,
+        user: 'You',
+        text,
+        timestamp: new Date()
+      };
+
+      const updatedRooms = state.rooms.map(room => {
+        if (room.id === roomId) {
+          const updatedRoom = {
+            ...room,
+            messages: [...room.messages, newMessage]
+          };
+          // Prune messages if needed
+          return pruneRoomMessages(updatedRoom);
+        }
+        return room;
+      });
+
+      return {
+        ...state,
+        rooms: updatedRooms,
+        inputValue: ''
+      };
+
+    case ACTIONS.SET_SHOW_FILE_EXPLORER:
+      return {
+        ...state,
+        showFileExplorer: action.payload
+      };
+
+    case ACTIONS.SET_FILE_ATTACHMENTS:
+      const { files, roomId: targetRoomId } = action.payload;
+
+      // If no files, just return current state
+      if (!files || (Array.isArray(files) && files.length === 0)) {
+        return {
+          ...state,
+          showFileExplorer: false
+        };
+      }
+
+      // Convert to array if single file
+      const filesArray = Array.isArray(files) ? files : [files];
+
+      // Create the message for file(s)
+      const totalSize = filesArray.reduce((sum, file) => sum + file.size, 0);
+      let messageText;
+
+      if (filesArray.length === 1) {
+        // Single file message
+        const file = filesArray[0];
+        messageText = `📎 Shared file: ${file.name} (${file.size} bytes)`;
+      } else {
+        // Multiple files message
+        messageText = `📎 Shared ${filesArray.length} files (${Math.round(totalSize / 1024)} KB total)\n`;
+        filesArray.forEach((file, index) => {
+          messageText += `\n${index + 1}. ${file.name} (${file.size} bytes)`;
+        });
+      }
+
+      // Create the file message
+      const fileMessage = {
+        id: `${targetRoomId}-msg-${Date.now()}`,
+        user: 'You',
+        text: messageText,
+        timestamp: new Date(),
+        attachedFiles: filesArray.length === 1 ? undefined : filesArray,
+        attachedFile: filesArray.length === 1 ? filesArray[0] : undefined
+      };
+
+      // Update rooms with the new message
+      const roomsWithFile = state.rooms.map(room => {
+        if (room.id === targetRoomId) {
+          const updatedRoom = {
+            ...room,
+            messages: [...room.messages, fileMessage]
+          };
+          return pruneRoomMessages(updatedRoom);
+        }
+        return room;
+      });
+
+      return {
+        ...state,
+        rooms: roomsWithFile,
+        showFileExplorer: false
+      };
+
+    case ACTIONS.CLEAR_HISTORY:
+      // Clear all messages from specific room
+      const clearedRooms = state.rooms.map(room => {
+        if (room.id === roomId) {
+          return { ...room, messages: [] };
+        }
+        return room;
+      });
+
+      return {
+        ...state,
+        rooms: clearedRooms
+      };
+
+    case ACTIONS.PRUNE_MESSAGES:
+      // Prune messages from all rooms
+      const prunedRooms = state.rooms.map(pruneRoomMessages);
+
+      return {
+        ...state,
+        rooms: prunedRooms
+      };
+
+    default:
+      return state;
+  }
+};
+
+const ChatContext = createContext();
+
+export const useChat = () => useContext(ChatContext);
+
 export const ChatProvider = ({ children, onBack }) => {
-  const [rooms, setRooms] = useState(MOCK_ROOMS);
-  const [activeRoomId, setActiveRoomId] = useState(MOCK_ROOMS[0].id);
-  const [inputValue, setInputValue] = useState('');
-  const [focusedPanel, setFocusedPanel] = useState('messages'); // 'rooms', 'messages', 'users', 'input'
-  const [inputMode, setInputMode] = useState(false);
+  const [state, dispatch] = useReducer(chatReducer, initialState);
 
-  // New state for file explorer
-  const [showFileExplorer, setShowFileExplorer] = useState(false);
+  // Add this at the top of the ChatProvider function:
+  const lastMessageRef = useRef(null);
 
-  const activeRoom = rooms.find(room => room.id === activeRoomId) || rooms[0];
+
+  const {
+    rooms,
+    activeRoomId,
+    inputValue,
+    focusedPanel,
+    inputMode,
+    showFileExplorer
+  } = state;
+
+  // Memoize the active room
+  const activeRoom = useMemo(() => {
+    return rooms.find(room => room.id === activeRoomId) || rooms[0];
+  }, [rooms, activeRoomId]);
 
   // Get chat keybindings for reference
-  const chatBindings = getBindingsForContext('chat');
+  const chatBindings = useMemo(() => {
+    return getBindingsForContext('chat');
+  }, []);
 
-  // Updated to handle multiple file selection
-  const handleFileSelect = (files) => {
-    setShowFileExplorer(false);
+  // Action creators (memoized for performance)
+  const setActiveRoomId = useCallback((id) => {
+    dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: id });
+  }, []);
 
-    // Guard against undefined or null
-    if (!files) return;
+  const setInputValue = useCallback((value) => {
+    dispatch({ type: ACTIONS.SET_INPUT_VALUE, payload: value });
+  }, []);
 
-    // If files is an array (multiselect) vs single file object
-    const filesArray = Array.isArray(files) ? files : [files];
+  const setFocusedPanel = useCallback((panel) => {
+    dispatch({ type: ACTIONS.SET_FOCUSED_PANEL, payload: panel });
+  }, []);
 
-    if (filesArray.length === 0) return;
+  const setInputMode = useCallback((mode) => {
+    dispatch({ type: ACTIONS.SET_INPUT_MODE, payload: mode });
+  }, []);
 
-    if (filesArray.length === 1) {
-      // Single file message
-      const file = filesArray[0];
-      const fileMessage = {
-        id: `${activeRoomId}-msg-${Date.now()}`,
-        user: 'You',
-        text: `📎 Shared file: ${file.name} (${file.size} bytes)`,
-        timestamp: new Date(),
-        attachedFile: file
-      };
+  const setShowFileExplorer = useCallback((show) => {
+    dispatch({ type: ACTIONS.SET_SHOW_FILE_EXPLORER, payload: show });
+  }, []);
 
-      const updatedRooms = rooms.map(room => {
-        if (room.id === activeRoomId) {
-          return {
-            ...room,
-            messages: [...room.messages, fileMessage]
-          };
-        }
-        return room;
-      });
+  // Fixed version of sendMessage in ChatContext.js
+  const sendMessage = useCallback((text) => {
+    if (!text || !text.trim()) return;
 
-      setRooms(updatedRooms);
-      console.log(`Shared file: ${file.name}`); // Debug log
-    } else {
-      // Multiple files message
-      const totalSize = filesArray.reduce((sum, file) => sum + file.size, 0);
-
-      const fileMessage = {
-        id: `${activeRoomId}-msg-${Date.now()}`,
-        user: 'You',
-        text: `📎 Shared ${filesArray.length} files (${Math.round(totalSize / 1024)} KB total)`,
-        timestamp: new Date(),
-        attachedFiles: filesArray
-      };
-
-      // Add individual file details as separate lines in the message
-      let detailedMessage = fileMessage.text + '\n';
-      filesArray.forEach((file, index) => {
-        detailedMessage += `\n${index + 1}. ${file.name} (${file.size} bytes)`;
-      });
-
-      fileMessage.text = detailedMessage;
-
-      const updatedRooms = rooms.map(room => {
-        if (room.id === activeRoomId) {
-          return {
-            ...room,
-            messages: [...room.messages, fileMessage]
-          };
-        }
-        return room;
-      });
-
-      setRooms(updatedRooms);
-      console.log(`Shared ${filesArray.length} files`); // Debug log
+    // Use a ref to prevent duplicate submissions
+    if (lastMessageRef.current === text) {
+      console.log('Preventing duplicate message:', text);
+      return;
     }
-  };
-  const sendMessage = (text) => {
-    if (!text.trim()) return;
 
-    const newMessage = {
-      id: `${activeRoomId}-msg-${Date.now()}`,
-      user: 'You',
-      text,
-      timestamp: new Date()
-    };
+    // Store the message in the ref to prevent duplicates
+    lastMessageRef.current = text;
 
-    const updatedRooms = rooms.map(room => {
-      if (room.id === activeRoomId) {
-        return {
-          ...room,
-          messages: [...room.messages, newMessage]
-        };
+    // Clear the ref after a short delay
+    setTimeout(() => {
+      if (lastMessageRef.current === text) {
+        lastMessageRef.current = null;
       }
-      return room;
+    }, 300);
+
+    // Truncate very long messages
+    let messageText = text;
+    if (messageText.length > MAX_MESSAGE_LENGTH) {
+      messageText = messageText.substring(0, MAX_MESSAGE_LENGTH) +
+        '\n\n[Message truncated due to length]';
+    }
+
+    dispatch({
+      type: ACTIONS.SEND_MESSAGE,
+      payload: { text: messageText, roomId: activeRoomId }
     });
+  }, [activeRoomId, dispatch]);
+  // Update handleInputSubmit to prevent double submissions
+  const handleInputSubmit = useCallback((localInputVal) => {
+    if (localInputVal == "") return true;
 
-    setRooms(updatedRooms);
-    setInputValue('');
-  };
-
-  const createRoom = (name) => {
-    if (!name.trim()) return;
-
-    const newRoom = {
-      id: `room-${Date.now()}`,
-      name,
-      messages: [],
-      users: ['You']
-    };
-
-    setRooms([...rooms, newRoom]);
-    setActiveRoomId(newRoom.id);
-  };
-
-  const handleKeyInput = (input, key) => {
-    // Check for /send command
-    if (inputValue.trim() === '/send' && (focusedPanel === 'input' || focusedPanel === 'messages')) {
+    // Check for commands first
+    if (localInputVal.trim() === '/send') {
       setInputValue('');
       setShowFileExplorer(true);
       return true;
     }
 
-    // Check for shareFile key binding
-    if (chatBindings.shareFile &&
-      matchesKeyBinding({ input, key, ...key }, chatBindings.shareFile)) {
-      setShowFileExplorer(true);
+    if (localInputVal.trim() === '/clear') {
+      setInputValue('');
+      clearHistory();
       return true;
     }
 
-    // Check for addRoom key binding
-    if (focusedPanel === 'rooms' &&
-      chatBindings.addRoom &&
-      matchesKeyBinding({ input, key, ...key }, chatBindings.addRoom)) {
-      setInputMode(true);
-      setInputValue('');
-      return true; // Handled
-    }
-
-    return false; // Not handled
-  };
-
-  const handleInputSubmit = () => {
     if (focusedPanel === 'rooms' && inputMode) {
-      createRoom(inputValue);
-      setInputMode(false);
-      setInputValue('');
-      return true;
-    } else if (focusedPanel === 'messages' || focusedPanel === 'input') {
-      // Check for /send command
-      if (inputValue.trim() === '/send') {
+      // Only create room if we have a name
+      if (localInputVal.trim()) {
+        createRoom(localInputVal);
+        setInputMode(false);
         setInputValue('');
-        setShowFileExplorer(true);
-        return true;
       }
+      return true;
+    } else if ((focusedPanel === 'messages' || focusedPanel === 'input') && localInputVal.trim()) {
+      // Store the current input value to clear it
+      const messageToSend = localInputVal;
 
-      // Check if input is too long and would overflow UI
-      const lines = inputValue.split('\n');
-      const isTooLong = lines.length > 500 || inputValue.length > 10000;
-
-      if (isTooLong) {
-        // Add a warning message instead
-        const warningMessage = {
-          id: `${activeRoomId}-msg-${Date.now()}`,
-          user: 'System',
-          text: `Message too long (${lines.length} lines, ${inputValue.length} characters). Please send smaller messages.`,
-          timestamp: new Date()
-        };
-
-        const updatedRooms = rooms.map(room => {
-          if (room.id === activeRoomId) {
-            return {
-              ...room,
-              messages: [...room.messages, warningMessage]
-            };
-          }
-          return room;
-        });
-
-        setRooms(updatedRooms);
-      } else {
-        sendMessage(inputValue);
-      }
-
+      // Clear input first to prevent re-submissions
       setInputValue('');
+
+      // Then send the message
+      sendMessage(messageToSend);
       return true;
     }
+
     return false;
+  }, [
+    focusedPanel,
+    inputMode,
+    inputValue,
+  ]);
+
+  const createRoom = useCallback((name) => {
+    if (!name.trim()) return;
+    dispatch({ type: ACTIONS.ADD_ROOM, payload: name.trim() });
+  }, []);
+
+  const handleFileSelect = useCallback((files) => {
+    dispatch({
+      type: ACTIONS.SET_FILE_ATTACHMENTS,
+      payload: { files, roomId: activeRoomId }
+    });
+  }, [activeRoomId]);
+
+  const clearHistory = useCallback((roomId = activeRoomId) => {
+    dispatch({ type: ACTIONS.CLEAR_HISTORY, payload: roomId });
+  }, [activeRoomId]);
+
+  const pruneMessages = useCallback(() => {
+    dispatch({ type: ACTIONS.PRUNE_MESSAGES });
+  }, []);
+
+  // Set up automatic pruning of messages on a timer
+  useEffect(() => {
+    // Prune messages every 5 minutes to prevent memory issues
+    const pruningInterval = setInterval(() => {
+      pruneMessages();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(pruningInterval);
+  }, [pruneMessages]);
+
+  const contextValue = {
+    rooms,
+    activeRoom,
+    activeRoomId,
+    setActiveRoomId,
+    inputValue,
+    setInputValue,
+    focusedPanel,
+    setFocusedPanel,
+    inputMode,
+    setInputMode,
+    sendMessage,
+    createRoom,
+    handleInputSubmit,
+    showFileExplorer,
+    setShowFileExplorer,
+    handleFileSelect,
+    clearHistory,
+    pruneMessages,
+    onBack
   };
 
   return (
-    <ChatContext.Provider
-      value={{
-        rooms,
-        activeRoom,
-        activeRoomId,
-        setActiveRoomId,
-        inputValue,
-        setInputValue,
-        focusedPanel,
-        setFocusedPanel,
-        inputMode,
-        setInputMode,
-        sendMessage,
-        createRoom,
-        handleKeyInput,
-        handleInputSubmit,
-        showFileExplorer,
-        setShowFileExplorer,
-        handleFileSelect,
-        onBack
-      }}
-    >
+    <ChatContext.Provider value={contextValue}>
       {children}
     </ChatContext.Provider>
   );

@@ -10,19 +10,12 @@ const formatTime = (timestamp) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-// Safely truncate text to fit within width
-const fitTextToWidth = (text, maxWidth) => {
-  if (!text) return '';
-  if (text.length <= maxWidth) return text;
-  return text.substring(0, maxWidth - 3) + '...';
-};
-
 // Split long message text into lines that fit within available width
 const prepareMessageLines = (text, maxWidth) => {
   if (!text) return [];
 
   // First split by natural line breaks
-  const naturalLines = text.split('\n');
+  const naturalLines = text.replaceAll('␍', '\n').split('\n');
   const result = [];
 
   // Then ensure each line fits within maxWidth

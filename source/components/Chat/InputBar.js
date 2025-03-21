@@ -1,33 +1,54 @@
-// components/Chat/InputBar.js
-import React from 'react';
+// components/Chat/InputBar.js - Fixed to prevent double submissions
+import React, { useState, useRef, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import TextInput from '../TextInput.js';
 import { useChat } from '../../contexts/ChatContext.js';
 import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
+import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 
 const InputBar = ({ width = 100, isFocused = false }) => {
+
+  const [localInputValue, setLocalInputValue] = useState('');
   const {
     inputMode,
     focusedPanel,
-    inputValue,
     setInputValue,
     handleInputSubmit
   } = useChat();
+
+  // Track submission state to prevent double submissions
+  const isSubmittingRef = useRef(false);
 
   // Get key binding descriptions
   const contextBindings = getBindingsForContext('chat');
   const sendKey = getBindingDescription(contextBindings.focusInput);
 
   // Split multiline input for display
-  const displayLines = inputValue.split('\n');
+  const displayLines = localInputValue.split('\n');
   const displayValue = displayLines.length > 1
     ? `${displayLines[0]}... (${displayLines.length} lines)`
-    : inputValue;
+    : localInputValue;
 
   const handleChange = (value) => {
     // Allow pasted text with newlines
-    setInputValue(value);
+    setLocalInputValue(sanitizeTextForTerminal(value));
   };
+
+  // Wrap handleInputSubmit to prevent double submissions
+  const handleSubmit = useCallback((value) => {
+    if (isSubmittingRef.current) {
+      console.log('Preventing duplicate submission');
+      return;
+    }
+    isSubmittingRef.current = true;
+    setInputValue(value); // Update context once
+    handleInputSubmit(value);
+    // Reset the flag after a short delay
+    setLocalInputValue('');
+    setTimeout(() => {
+      isSubmittingRef.current = false;
+    }, 300);
+  }, [localInputValue]);
 
   return (
     <Box
@@ -48,9 +69,9 @@ const InputBar = ({ width = 100, isFocused = false }) => {
         {inputMode ? (
           <TextInput
             wrap={"truncate-start"}
-            value={displayValue}
+            value={localInputValue}
             onChange={handleChange}
-            onSubmit={handleInputSubmit}
+            onSubmit={handleSubmit}
             focus={inputMode} // Ensure focus when in input mode
           />
         ) : (
@@ -68,4 +89,4 @@ const InputBar = ({ width = 100, isFocused = false }) => {
   );
 };
 
-export default InputBar;
+export default React.memo(InputBar);
