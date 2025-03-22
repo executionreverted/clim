@@ -1,4 +1,4 @@
-// components/Chat/RoomList.js - Updated for P2P integration
+// components/Chat/RoomList.js - Updated with better text truncation
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
@@ -93,18 +93,23 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
   const getStatusIcon = (room) => {
     const peerCount = peers[room.id] || 0;
 
-    if (room.status === 'error') return { icon: '🔴', color: errorColor };
-    if (room.status === 'connecting') return { icon: '🔄', color: warningColor };
+    if (room.status === 'error') return { icon: 'o', color: errorColor };
+    if (room.status === 'connecting') return { icon: 'o', color: warningColor };
 
     // Connected status with peer indication
-    if (peerCount > 0) return { icon: '🟢', color: successColor };
-    return { icon: '⚪', color: mutedTextColor };
+    if (peerCount > 0) return { icon: 'o', color: successColor };
+    return { icon: 'o', color: mutedTextColor };
   };
+
+  // Calculate maximum room name width based on panel width
+  // Reserve space for: cursor (2), status icon (2), peer count (4), padding (2)
+  const maxRoomNameWidth = Math.max(5, width - 10);
 
   return (
     <Box
       width={width}
       height={height}
+      overflow={"hidden"}
       borderStyle="single"
       borderColor={isFocused ? activeBorderColor : borderColor}
       flexDirection="column"
@@ -118,7 +123,7 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
 
       {isFocused && inputMode ? (
         <Box>
-          <Text color={warningColor}>New room: {inputValue || "Type name..."}</Text>
+          <Text color={warningColor} wrap="truncate">New room: {inputValue || "Type name..."}</Text>
         </Box>
       ) : rooms.length === 0 ? (
         <Box>
@@ -139,15 +144,20 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
             const status = getStatusIcon(room);
             const peerCount = peers[room.id] || 0;
 
+            // Truncate room name if too long
+            const displayName = room.name.length > maxRoomNameWidth
+              ? room.name.substring(0, maxRoomNameWidth - 3) + '...'
+              : room.name;
+
             return (
-              <Box key={room.id}>
+              <Box overflow={"hidden"} key={room.id} width={width - 6}>
                 <Text
-                  color={isSelected ? secondaryColor : primaryColor}
+                  color={isSelected ? successColor : secondaryColor}
                   bold={isSelected}
                   wrap="truncate"
                 >
                   {isSelected && isFocused ? ">" : " "}
-                  <Text color={status.color}>{status.icon}</Text> {room.name}
+                  <Text color={status.color}>{status.icon}</Text> {displayName}
                   <Text color={mutedTextColor}> ({peerCount})</Text>
                 </Text>
               </Box>

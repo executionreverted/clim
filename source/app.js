@@ -45,7 +45,7 @@ const App = () => {
   useEffect(() => {
     const handleResize = () => {
       setTerminalWidth(stdout.columns - 1);
-      setTerminalHeight(stdout.rows - 1);
+      setTerminalHeight(stdout.rows - 2);
     };
 
     stdout.on('resize', handleResize);

@@ -38,7 +38,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
 
   // Calculate panel widths based on terminal size
   const availableWidth = Math.max(60, width);
-  const roomListWidth = Math.max(15, Math.floor(availableWidth * 0.15));
+  const roomListWidth = Math.max(15, Math.floor(availableWidth * 0.20));
   const userListWidth = Math.max(15, Math.floor(availableWidth * 0.20));
   const messageListWidth = availableWidth - roomListWidth - userListWidth - 4; // Subtract borders
 
