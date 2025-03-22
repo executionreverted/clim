@@ -87,7 +87,8 @@ export const ChatProvider = ({ children, onBack }) => {
     leaveRoom,
     sendMessage,
     peers,
-    createInviteCode
+    createInviteCode,
+    updateProfile
   } = useP2PRoom();
 
   // Add this at the top of the ChatProvider function:
@@ -330,5 +331,6 @@ export const ChatProvider = ({ children, onBack }) => {
     </ChatContext.Provider>
   );
 };
+
 
 export default ChatContext;

@@ -1,4 +1,4 @@
-// components/Chat/ChatLayout.js - Updated for P2P integration
+// components/Chat/ChatLayout.js - Updated to correctly reference peer data
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
@@ -9,7 +9,6 @@ import InputBar from './InputBar.js';
 import TopBar from './TopBar.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
-import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
 const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const {
@@ -21,20 +20,8 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     handleInputSubmit,
     onBack,
     setShowFileExplorer,
-    peers,
-    activeRoomId,
-    rooms
+    activeRoomId
   } = useChat();
-
-  const currentTheme = useThemeUpdate();
-  const {
-    primaryColor,
-    secondaryColor,
-    warningColor,
-    infoColor,
-    borderColor,
-    activeBorderColor,
-  } = currentTheme.colors;
 
   // Calculate panel widths based on terminal size
   const availableWidth = Math.max(60, width);
@@ -47,9 +34,6 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const bottomHelpHeight = 1;
   const inputBarHeight = 3;
   const contentHeight = Math.max(10, height - topBarHeight - bottomHelpHeight - inputBarHeight - 2);
-
-  // Get peer count for active room
-  const peerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
 
   // Define handlers for chat actions
   const handlers = {
@@ -123,7 +107,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       width={width}
       height={height}
     >
-      <TopBar width={width} peerCount={peerCount} />
+      <TopBar width={width} />
 
       <Box
         flexDirection="row"
@@ -146,7 +130,6 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
           width={userListWidth}
           height={contentHeight}
           isFocused={focusedPanel === 'users'}
-          peerCount={peerCount}
         />
       </Box>
 

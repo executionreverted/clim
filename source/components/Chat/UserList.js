@@ -1,13 +1,42 @@
-// components/Chat/UserList.js - Updated for P2P integration
-import React, { useState } from 'react';
+// components/Chat/UserList.js - With stability to prevent empty lists during updates
+import React, { memo, useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
-import useKeymap from '../../hooks/useKeymap.js';
+import { useP2PRoom } from '../../contexts/P2PRoomContext.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
-const UserList = ({ width = 20, height = 20, isFocused = false, peerCount = 0 }) => {
-  const { activeRoom, inputMode } = useChat();
+// Memoized peer item to prevent unnecessary rerenders
+const PeerItem = memo(({ peer, isFocused, colors }) => {
+  const { secondaryColor, mutedTextColor, primaryColor } = colors;
+
+  return (
+    <Box>
+      <Text
+        color={peer.isYou ? secondaryColor : (peer.anonymous ? mutedTextColor : primaryColor)}
+        bold={peer.isYou}
+        wrap="truncate"
+      >
+        {isFocused ? '•' : ' '} {peer.name}
+        {peer.isYou && ' (you)'}
+      </Text>
+    </Box>
+  );
+}, (prevProps, nextProps) => {
+  // Only rerender if these props change
+  return (
+    prevProps.peer.name === nextProps.peer.name &&
+    prevProps.peer.isYou === nextProps.peer.isYou &&
+    prevProps.peer.anonymous === nextProps.peer.anonymous &&
+    prevProps.isFocused === nextProps.isFocused
+  );
+});
+
+const UserList = ({ width = 20, height = 20, isFocused = false }) => {
+  const { activeRoomId } = useChat();
+  const { identity, peers, roomConnections } = useP2PRoom();
   const currentTheme = useThemeUpdate();
+
+  // Theme colors for styling
   const {
     primaryColor,
     secondaryColor,
@@ -16,17 +45,79 @@ const UserList = ({ width = 20, height = 20, isFocused = false, peerCount = 0 })
     activeBorderColor,
   } = currentTheme.colors;
 
-  // In a real P2P system, we'd show connected peer information here
-  // For now, create a basic representation of connected peers
-  const peers = [];
+  // CRUCIAL CHANGE: Maintain our own stable state of user list
+  const [stableUserList, setStableUserList] = useState([]);
+  const [stablePeerCount, setStablePeerCount] = useState(0);
 
-  // Add yourself
-  peers.push({ id: 'you', name: 'You (this device)', isYou: true });
+  // References to track changes
+  const lastUpdateTimeRef = useRef(Date.now());
+  const pendingUpdateRef = useRef(null);
 
-  // Add anonymous peers based on count
-  for (let i = 0; i < peerCount; i++) {
-    peers.push({ id: `peer-${i}`, name: `Peer ${i + 1}`, isYou: false });
-  }
+  // Get the raw data from context
+  const rawPeerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
+  const rawConnections = roomConnections[activeRoomId] || [];
+
+  // Update the stable list only after a debounce period
+  useEffect(() => {
+    // Clear any pending update
+    if (pendingUpdateRef.current) {
+      clearTimeout(pendingUpdateRef.current);
+    }
+
+    // Only update if we have connections or it's been over 5 seconds since last update
+    if (rawConnections.length > 0 || Date.now() - lastUpdateTimeRef.current > 5000) {
+      // Create a list of peers to display
+      const newUserList = [];
+
+      // First add yourself
+      if (identity) {
+        newUserList.push({
+          id: identity.publicKey,
+          stableKey: 'you',
+          name: identity.username,
+          isYou: true
+        });
+      }
+
+      // Add all peers from connections
+      rawConnections.forEach(connection => {
+        // Skip if this is us
+        if (connection.publicKey === identity?.publicKey) return;
+
+        const stableKey = connection.publicKey || connection.id || `anonymous-${Math.random().toString(36).substring(2, 9)}`;
+        newUserList.push({
+          id: connection.id || connection.publicKey || stableKey,
+          stableKey: stableKey,
+          name: connection.username || 'Anonymous Peer',
+          isYou: false,
+          publicKey: connection.publicKey,
+          lastSeen: connection.lastSeen,
+          anonymous: !connection.publicKey || connection.anonymous
+        });
+      });
+      setStableUserList(newUserList);
+      setStablePeerCount(rawPeerCount);
+      lastUpdateTimeRef.current = Date.now();
+    }, [rawConnections, rawPeerCount, identity]);
+
+  // Calculate how many max peers we can show based on available height
+  // Accounting for header (2 lines) and footer (2 lines)
+  const maxVisiblePeers = Math.max(1, height - 4);
+
+  // Sort peers: you first, then identified peers, then anonymous
+  const sortedPeers = [...stableUserList].sort((a, b) => {
+    if (a.isYou) return -1;
+    if (b.isYou) return 1;
+    if (a.anonymous && !b.anonymous) return 1;
+    if (!a.anonymous && b.anonymous) return -1;
+    return (b.lastSeen || 0) - (a.lastSeen || 0); // Most recent first
+  });
+
+  // Limit to visible peers
+  const visiblePeers = sortedPeers.slice(0, maxVisiblePeers);
+
+  // If we have no peers yet BUT we have raw connection data, show a loading message instead of "No peers"
+  const isLoading = stableUserList.length === 0 && rawConnections.length > 0;
 
   return (
     <Box
@@ -40,34 +131,31 @@ const UserList = ({ width = 20, height = 20, isFocused = false, peerCount = 0 })
     >
       <Box>
         <Text bold underline wrap="truncate">
-          Connected Peers ({peers.length})
+          Connected Peers ({stablePeerCount})
         </Text>
       </Box>
 
-      {peers.length === 0 ? (
+      {stableUserList.length === 0 ? (
         <Box>
           <Text color={mutedTextColor} italic>
-            No peers connected
+            {isLoading ? "Loading peers..." : "No peers connected"}
           </Text>
         </Box>
       ) : (
         <Box flexDirection="column">
-          {peers.map((peer) => (
-            <Box key={peer.id}>
-              <Text
-                color={peer.isYou ? secondaryColor : primaryColor}
-                bold={peer.isYou}
-                wrap="truncate"
-              >
-                {isFocused ? '•' : ' '} {peer.name}
-              </Text>
-            </Box>
+          {visiblePeers.map((peer) => (
+            <PeerItem
+              key={peer.stableKey || peer.id}
+              peer={peer}
+              isFocused={isFocused}
+              colors={{ primaryColor, secondaryColor, mutedTextColor }}
+            />
           ))}
 
-          {peerCount > 0 && (
+          {sortedPeers.length > maxVisiblePeers && (
             <Box marginTop={1}>
               <Text color={mutedTextColor} italic wrap="truncate">
-                {peerCount === 1 ? '1 peer connected' : `${peerCount} peers connected`}
+                {sortedPeers.length - maxVisiblePeers} more peers not shown
               </Text>
             </Box>
           )}
@@ -76,7 +164,9 @@ const UserList = ({ width = 20, height = 20, isFocused = false, peerCount = 0 })
 
       <Box marginTop={1}>
         <Text color={mutedTextColor} italic wrap="truncate">
-          P2P connections are anonymous
+          {stablePeerCount === 0
+            ? 'Join a room to connect with peers'
+            : 'Some peers may appear as anonymous'}
         </Text>
       </Box>
     </Box>

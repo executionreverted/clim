@@ -1,4 +1,4 @@
-// src/contexts/P2PRoomContext.js - Enhanced with user identification
+// src/contexts/P2PRoomContext.js - Enhanced with better peer tracking
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import fs from 'fs';
 import path from 'path';
@@ -9,10 +9,12 @@ import clipboardy from 'clipboardy';
 import { randomBytes } from 'crypto';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + Math.floor(Math.random() * 1000));
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + Math.ceil(Math.random() * 1000));
 const ROOMS_FILE = path.join(CONFIG_DIR, 'rooms.json');
 const USERS_FILE = path.join(CONFIG_DIR, 'users.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
+
+// src/contexts/P2PRoomContext.js - Enhanced with better peer tracking
 
 // Create the context
 const P2PRoomContext = createContext();
@@ -27,6 +29,7 @@ const ACTIONS = {
   SET_CONNECTING: 'SET_CONNECTING',
   SET_ERROR: 'SET_ERROR',
   SET_PEERS: 'SET_PEERS',
+  SET_ROOM_CONNECTIONS: 'SET_ROOM_CONNECTIONS',
   UPDATE_ROOM_STATUS: 'UPDATE_ROOM_STATUS',
   SET_USERS: 'SET_USERS',
   UPDATE_USER: 'UPDATE_USER',
@@ -40,6 +43,7 @@ const initialState = {
   connecting: false,
   error: null,
   peers: {},
+  roomConnections: {}, // Maps roomId -> array of connections with their profile data
   users: {},
   identity: null
 };
@@ -66,7 +70,10 @@ function reducer(state, action) {
         rooms: state.rooms.filter(room => room.id !== action.payload),
         activeRoomId: state.activeRoomId === action.payload
           ? (state.rooms.length > 1 ? state.rooms.find(r => r.id !== action.payload)?.id : null)
-          : state.activeRoomId
+          : state.activeRoomId,
+        // Also clean up peers and connections for this room
+        peers: { ...state.peers, [action.payload]: undefined },
+        roomConnections: { ...state.roomConnections, [action.payload]: undefined }
       };
 
     case ACTIONS.ADD_MESSAGE:
@@ -94,6 +101,15 @@ function reducer(state, action) {
         peers: {
           ...state.peers,
           [action.payload.roomId]: action.payload.count
+        }
+      };
+
+    case ACTIONS.SET_ROOM_CONNECTIONS:
+      return {
+        ...state,
+        roomConnections: {
+          ...state.roomConnections,
+          [action.payload.roomId]: action.payload.connections
         }
       };
 
@@ -126,10 +142,6 @@ function reducer(state, action) {
       return state;
   }
 }
-
-
-
-
 
 // Helper function to create room topic from room ID
 function createRoomTopic(roomId) {
@@ -170,12 +182,24 @@ function loadOrCreateIdentity() {
       createdAt: Date.now()
     };
 
+    // Ensure directory exists
+    if (!fs.existsSync(path.dirname(IDENTITY_FILE))) {
+      fs.mkdirSync(path.dirname(IDENTITY_FILE), { recursive: true });
+    }
+
     // Save identity
     fs.writeFileSync(IDENTITY_FILE, JSON.stringify(identity, null, 2));
 
     return identity;
   } catch (err) {
-    throw new Error(`Failed to create/load identity: ${err.message}`);
+    console.error(`Failed to create/load identity:`, err);
+    // Return a fallback identity if file operations fail
+    const publicKey = randomBytes(32).toString('hex');
+    return {
+      publicKey,
+      username: `User_${publicKey.substring(0, 6)}`,
+      createdAt: Date.now()
+    };
   }
 }
 
@@ -183,7 +207,7 @@ function loadOrCreateIdentity() {
 export function P2PRoomProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const swarmRefs = useRef(new Map());
-  const peersRef = useRef({});
+  const connectionProfiles = useRef(new Map()); // Maps connection objects to their profile data
 
   // Ensure config directory exists and load identity
   useEffect(() => {
@@ -234,6 +258,64 @@ export function P2PRoomProvider({ children }) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Initialization error: ${err.message}` });
     }
   }, []);
+
+  // Update roomConnections for a room when it changes
+  const updateRoomConnections = (roomId, swarm) => {
+    if (!roomId || !swarm) return;
+
+    // First get the current connections
+    const currentConnections = state.roomConnections[roomId] || [];
+
+    // Get the connections for this room
+    const newConnections = Array.from(swarm.connections || []).map(connection => {
+      // Get profile information for this connection if we have it
+      const profile = connectionProfiles.current.get(connection) || {
+        anonymous: true,
+        lastSeen: Date.now()
+      };
+
+      // Try to find this connection in the current list by publicKey
+      if (profile.publicKey) {
+        const existing = currentConnections.find(conn => conn.publicKey === profile.publicKey);
+        if (existing) {
+          // Return updated connection but preserve stable ID
+          return {
+            ...existing,
+            username: profile.username || existing.username,
+            lastSeen: profile.lastSeen || Date.now(),
+            anonymous: !profile.publicKey
+          };
+        }
+      }
+
+      // New connection
+      return {
+        id: profile.publicKey || `anonymous-${Math.random().toString(36).substring(2, 9)}`,
+        username: profile.username || 'Anonymous Peer',
+        publicKey: profile.publicKey,
+        lastSeen: profile.lastSeen || Date.now(),
+        anonymous: !profile.publicKey
+      };
+    });
+
+    // Update state using the updated connections list that preserves IDs
+    dispatch({
+      type: ACTIONS.SET_ROOM_CONNECTIONS,
+      payload: {
+        roomId,
+        connections: newConnections
+      }
+    });
+
+    // Also update the peer count from the actual connections size
+    dispatch({
+      type: ACTIONS.SET_PEERS,
+      payload: {
+        roomId,
+        count: swarm.connections.size
+      }
+    });
+  };
 
   // Initialize Hyperswarm for each room
   useEffect(() => {
@@ -289,49 +371,8 @@ export function P2PRoomProvider({ children }) {
     }
   }, [state.users]);
 
-
-  useEffect(() => {
-    // Define the cleanup function
-    const cleanupSwarms = async () => {
-      console.log(`Cleaning up ${swarmRefs.current.size} swarm connections...`);
-
-      for (const [roomId, swarm] of swarmRefs.current.entries()) {
-        try {
-          console.log(`Closing swarm for room ${roomId}...`);
-          await swarm.destroy();
-          console.log(`Swarm for room ${roomId} closed successfully`);
-        } catch (err) {
-          console.error(`Error closing swarm for room ${roomId}:`, err.message);
-        }
-      }
-
-      // Clear all references
-      swarmRefs.current.clear();
-      console.log('All swarm connections closed');
-    };
-
-    // Handle CTRL+C and other termination signals
-    const handleExit = async () => {
-      console.log('Application terminating, closing connections...');
-      await cleanupSwarms();
-      process.exit(0);
-    };
-
-    // Register the handlers
-    process.on('SIGINT', handleExit);
-    process.on('SIGTERM', handleExit);
-
-    // Clean up event listeners when component unmounts
-    return () => {
-      process.removeListener('SIGINT', handleExit);
-      process.removeListener('SIGTERM', handleExit);
-    };
-  }, []);
-
-
-
   // Handle incoming message and extract user info
-  const processIncomingMessage = (roomId, data) => {
+  const processIncomingMessage = (roomId, data, connection) => {
     try {
       const message = JSON.parse(data.toString());
 
@@ -346,6 +387,19 @@ export function P2PRoomProvider({ children }) {
             // Sanitize content and sender
             const sanitizedContent = sanitizeMessage(message.content);
             const senderKey = sanitizeMessage(message.publicKey);
+
+            // Update connection profile
+            connectionProfiles.current.set(connection, {
+              publicKey: senderKey,
+              username: sanitizeMessage(message.sender),
+              lastSeen: Date.now()
+            });
+
+            // Update room connections
+            const swarm = swarmRefs.current.get(roomId);
+            if (swarm) {
+              updateRoomConnections(roomId, swarm);
+            }
 
             // Update or add user info
             const userData = state.users[senderKey] || {
@@ -387,6 +441,34 @@ export function P2PRoomProvider({ children }) {
           }
           break;
 
+        case 'name_change':
+          // Handle username change notification
+          if (message.publicKey && message.oldUsername && message.newUsername) {
+            const senderKey = sanitizeMessage(message.publicKey);
+
+            // Don't show notification for our own name change (we handle that separately)
+            if (senderKey !== state.identity?.publicKey) {
+              // Create system message about name change
+              const systemMessage = {
+                id: `system-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                content: `${sanitizeMessage(message.oldUsername)} changed their name to "${sanitizeMessage(message.newUsername)}"`,
+                sender: 'System',
+                timestamp: message.timestamp || Date.now(),
+                system: true
+              };
+
+              // Add system message to chat
+              dispatch({
+                type: ACTIONS.ADD_MESSAGE,
+                payload: {
+                  roomId,
+                  message: systemMessage
+                }
+              });
+            }
+          }
+          break;
+
         case 'profile':
           // Update user profile information
           if (message.publicKey && message.username) {
@@ -401,6 +483,22 @@ export function P2PRoomProvider({ children }) {
             userData.lastSeen = Date.now();
             if (message.avatar) userData.avatar = sanitizeMessage(message.avatar);
 
+            // Update connection profile
+            connectionProfiles.current.set(connection, {
+              publicKey: senderKey,
+              username: userData.username,
+              lastSeen: Date.now()
+            });
+
+            // Update room connections without triggering a full UI redraw
+            const swarm = swarmRefs.current.get(roomId);
+            if (swarm) {
+              // Use setTimeout to ensure profile updates don't cause UI glitches
+              setTimeout(() => {
+                updateRoomConnections(roomId, swarm);
+              }, 100);
+            }
+
             // Update users
             dispatch({
               type: ACTIONS.UPDATE_USER,
@@ -414,6 +512,7 @@ export function P2PRoomProvider({ children }) {
       }
     } catch (err) {
       // Silently ignore malformed messages
+      console.debug(`Error processing message: ${err.message}`);
     }
   };
 
@@ -426,10 +525,11 @@ export function P2PRoomProvider({ children }) {
 
     try {
       // Create a real Hyperswarm instance
-      const swarm = new Hyperswarm();
-
-      // Initialize peer count tracking
-      peersRef.current[room.id] = 0;
+      const swarm = new Hyperswarm({
+        // We can add hyperswarm configuration here if needed
+        maxPeers: 50,
+        firewallAllConnections: false,
+      });
 
       dispatch({
         type: ACTIONS.UPDATE_ROOM_STATUS,
@@ -440,17 +540,28 @@ export function P2PRoomProvider({ children }) {
       const topic = createRoomTopic(room.id);
       const discovery = swarm.join(topic, { server: true, client: true });
 
+      // Add update handler for swarm connection changes
+      const updateSwarmStatus = () => {
+        // Update peer count and connections based on actual swarm state
+        updateRoomConnections(room.id, swarm);
+      };
+
+      // Initial connection status update
+      updateSwarmStatus();
+
+      // Listen for the 'update' event from Hyperswarm
+      swarm.on('update', updateSwarmStatus);
+
       // Handle new connections
       swarm.on('connection', (socket, info) => {
-        // Update peer count
-        peersRef.current[room.id] = (peersRef.current[room.id] || 0) + 1;
-        dispatch({
-          type: ACTIONS.SET_PEERS,
-          payload: {
-            roomId: room.id,
-            count: peersRef.current[room.id]
-          }
+        // Add to connection profiles with initial placeholder data
+        connectionProfiles.current.set(socket, {
+          anonymous: true,
+          lastSeen: Date.now()
         });
+
+        // Update all connections immediately
+        updateSwarmStatus();
 
         // Send our profile to the new peer
         const profileMsg = JSON.stringify({
@@ -463,37 +574,39 @@ export function P2PRoomProvider({ children }) {
 
         // Handle data from this peer
         socket.on('data', data => {
-          processIncomingMessage(room.id, data);
+          processIncomingMessage(room.id, data, socket);
         });
-        socket.on('error', err => {
 
-        });
-        swarm.on('error', (err) => {
-          // Log error for debugging but suppress it from console
-          console.debug(`Swarm error in room ${room.id}: ${err.message}`);
-
-          // Update room status if it's a serious connection error
-          if (err.message.includes('connection timed out') ||
-            err.message.includes('connection failed') ||
-            err.message.includes('network error')) {
-            dispatch({
-              type: ACTIONS.UPDATE_ROOM_STATUS,
-              payload: { roomId: room.id, status: 'reconnecting' }
-            });
-          }
-        });
         // Handle socket close
         socket.on('close', () => {
-          // Update peer count
-          peersRef.current[room.id] = Math.max(0, (peersRef.current[room.id] || 0) - 1);
-          dispatch({
-            type: ACTIONS.SET_PEERS,
-            payload: {
-              roomId: room.id,
-              count: peersRef.current[room.id]
-            }
-          });
+          // Remove from connection profiles
+          connectionProfiles.current.delete(socket);
+          // Update all connections immediately
+          updateSwarmStatus();
         });
+
+        // Handle socket errors
+        socket.on('error', err => {
+          console.debug(`Socket error in room ${room.id}: ${err.message}`);
+          // Remove from connection profiles on error
+          connectionProfiles.current.delete(socket);
+          updateSwarmStatus();
+        });
+      });
+
+      // Handle swarm errors
+      swarm.on('error', (err) => {
+        console.debug(`Swarm error in room ${room.id}: ${err.message}`);
+
+        // Update room status if it's a serious connection error
+        if (err.message.includes('connection timed out') ||
+          err.message.includes('connection failed') ||
+          err.message.includes('network error')) {
+          dispatch({
+            type: ACTIONS.UPDATE_ROOM_STATUS,
+            payload: { roomId: room.id, status: 'reconnecting' }
+          });
+        }
       });
 
       // Wait for the topic to be announced
@@ -517,6 +630,8 @@ export function P2PRoomProvider({ children }) {
         type: ACTIONS.UPDATE_ROOM_STATUS,
         payload: { roomId: room.id, status: 'error' }
       });
+
+      console.error(`Error initializing swarm for room ${room.id}:`, err);
     }
   };
 
@@ -580,6 +695,7 @@ export function P2PRoomProvider({ children }) {
         initRoomSwarm(newRoom);
         return newRoom.id;
       } catch (err) {
+        console.error('Error joining room with invite code:', err);
         return null;
       }
     }
@@ -600,10 +716,15 @@ export function P2PRoomProvider({ children }) {
     const swarm = swarmRefs.current.get(roomId);
     if (swarm) {
       try {
+        // Remove all connection profiles for this room
+        for (const connection of swarm.connections) {
+          connectionProfiles.current.delete(connection);
+        }
+
         await swarm.destroy();
         swarmRefs.current.delete(roomId);
       } catch (err) {
-        // Silently handle destroy errors
+        console.error(`Error destroying swarm for room ${roomId}:`, err);
       }
     }
 
@@ -616,13 +737,13 @@ export function P2PRoomProvider({ children }) {
         fs.unlinkSync(roomFile);
       }
     } catch (err) {
-      // Silently handle file deletion errors
+      console.error(`Error deleting room file for ${roomId}:`, err);
     }
   };
 
   // Function to send a message
-  const sendMessage = (roomId, content) => {
-    if (!content || content.trim() === '' || !state.identity) return;
+  const sendMessage = (roomId, content, isSystemMessage = false) => {
+    if (!content || content.trim() === '' || (!state.identity && !isSystemMessage)) return;
 
     // Sanitize content
     const sanitizedContent = sanitizeMessage(content);
@@ -631,11 +752,18 @@ export function P2PRoomProvider({ children }) {
     const message = {
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
       content: sanitizedContent,
-      sender: state.identity.username,
-      publicKey: state.identity.publicKey,
       timestamp: Date.now(),
       sent: true
     };
+
+    // Add sender information if not a system message
+    if (isSystemMessage) {
+      message.sender = 'System';
+      message.system = true;
+    } else {
+      message.sender = state.identity.username;
+      message.publicKey = state.identity.publicKey;
+    }
 
     // Add to local state
     dispatch({
@@ -643,23 +771,26 @@ export function P2PRoomProvider({ children }) {
       payload: { roomId, message }
     });
 
-    // Broadcast to peers
-    const swarm = swarmRefs.current.get(roomId);
-    if (swarm) {
-      const chatMessage = JSON.stringify({
-        type: 'chat',
-        content: sanitizedContent,
-        sender: state.identity.username,
-        publicKey: state.identity.publicKey,
-        timestamp: message.timestamp
-      });
+    // Only broadcast non-system messages to peers
+    if (!isSystemMessage) {
+      // Broadcast to peers
+      const swarm = swarmRefs.current.get(roomId);
+      if (swarm) {
+        const chatMessage = JSON.stringify({
+          type: 'chat',
+          content: sanitizedContent,
+          sender: state.identity.username,
+          publicKey: state.identity.publicKey,
+          timestamp: message.timestamp
+        });
 
-      // Broadcast to all peers
-      for (const connection of swarm.connections) {
-        try {
-          connection.write(chatMessage);
-        } catch (err) {
-          // Silently handle write errors
+        // Broadcast to all peers
+        for (const connection of swarm.connections) {
+          try {
+            connection.write(chatMessage);
+          } catch (err) {
+            console.debug(`Error sending message to peer: ${err.message}`);
+          }
         }
       }
     }
@@ -667,10 +798,13 @@ export function P2PRoomProvider({ children }) {
 
   // Function to update user profile
   const updateProfile = (username) => {
-    if (!username || !state.identity) return;
+    if (!username || !state.identity) return false;
 
     // Sanitize username
     const sanitizedUsername = sanitizeMessage(username);
+
+    // Store old username for system message
+    const oldUsername = state.identity.username;
 
     // Update identity
     const updatedIdentity = {
@@ -693,6 +827,16 @@ export function P2PRoomProvider({ children }) {
     state.rooms.forEach(room => {
       const swarm = swarmRefs.current.get(room.id);
       if (swarm) {
+        // First send a name change notification
+        const nameChangeMessage = JSON.stringify({
+          type: 'name_change',
+          oldUsername: oldUsername,
+          newUsername: sanitizedUsername,
+          publicKey: state.identity.publicKey,
+          timestamp: Date.now()
+        });
+
+        // Then send profile update
         const profileMessage = JSON.stringify({
           type: 'profile',
           username: sanitizedUsername,
@@ -703,15 +847,17 @@ export function P2PRoomProvider({ children }) {
         // Broadcast to all peers
         for (const connection of swarm.connections) {
           try {
+            // Send both messages
+            connection.write(nameChangeMessage);
             connection.write(profileMessage);
           } catch (err) {
-            // Silently handle write errors
+            console.debug(`Error sending profile update: ${err.message}`);
           }
         }
       }
     });
 
-    return true;
+    return { success: true, oldUsername, newUsername: sanitizedUsername };
   };
 
   // Function to create and copy an invite code
@@ -746,6 +892,7 @@ export function P2PRoomProvider({ children }) {
       clipboardy.writeSync(inviteCode);
       return inviteCode;
     } catch (err) {
+      console.error('Error copying to clipboard:', err);
       return inviteCode; // Return the code even if copying failed
     }
   };
@@ -765,6 +912,11 @@ export function P2PRoomProvider({ children }) {
     return state.users[publicKey]?.username || `User_${publicKey.substring(0, 6)}`;
   };
 
+  // Get all connection data for a specific room
+  const getRoomConnections = (roomId) => {
+    return state.roomConnections[roomId] || [];
+  };
+
   // Provide the context value
   const contextValue = {
     rooms: state.rooms,
@@ -773,6 +925,7 @@ export function P2PRoomProvider({ children }) {
     error: state.error,
     connecting: state.connecting,
     peers: state.peers,
+    roomConnections: state.roomConnections,
     users: state.users,
     identity: state.identity,
 
@@ -783,7 +936,8 @@ export function P2PRoomProvider({ children }) {
     setActiveRoom,
     createInviteCode,
     updateProfile,
-    getUserForKey
+    getUserForKey,
+    getRoomConnections
   };
 
   return (
