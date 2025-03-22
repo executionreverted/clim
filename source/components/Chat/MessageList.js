@@ -1,10 +1,11 @@
-// components/Chat/MessageList.js
+// components/Chat/MessageList.js - Updated for P2P integration
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import { useP2PRoom } from '../../contexts/P2PRoomContext.js';
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
@@ -15,7 +16,6 @@ const formatTime = (timestamp) => {
 const prepareMessageLines = (text, maxWidth) => {
   if (!text) return [];
 
-
   // First split by natural line breaks
   const naturalLines = text.replaceAll('␍', '\n').replaceAll('↵', '\n').split('\n');
   const result = [];
@@ -25,7 +25,9 @@ const prepareMessageLines = (text, maxWidth) => {
     // Simple wrapping for lines longer than maxWidth
     for (let i = 0; i < line.length; i += maxWidth) {
       const chunk = line.substring(i, i + maxWidth).trim();
-      result.push(chunk);
+      if (chunk.length > 0) {
+        result.push(chunk);
+      }
     }
   });
 
@@ -34,62 +36,71 @@ const prepareMessageLines = (text, maxWidth) => {
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const { activeRoom, inputMode } = useChat();
+  const { identity } = useP2PRoom();
   const [scrollOffset, setScrollOffset] = useState(0);
-  const messages = activeRoom.messages || [];
+  const messages = activeRoom?.messages || [];
+
+  const currentTheme = useThemeUpdate();
   const {
     primaryColor,
     secondaryColor,
     mutedTextColor,
     borderColor,
     activeBorderColor,
-  } = useThemeUpdate().colors
+  } = currentTheme.colors;
+
   // Calculate available width and height
   const contentWidth = Math.max(20, width - 6); // Adjust for borders and padding
   const availableHeight = Math.max(5, height - 6); // Account for header and padding
 
-  // Sort messages by timestamp (oldest first)
-  const sortedMessages = [...messages].sort((a, b) =>
-    new Date(a.timestamp) - new Date(b.timestamp)
-  );
-
   // Process messages into display lines
   const processedLines = [];
-  sortedMessages.forEach(message => {
-    // Add header line
-    processedLines.push({
-      type: 'header',
-      user: message.user,
-      timestamp: message.timestamp,
-      messageId: message.id
-    });
 
-    // Process message content into lines that fit within width
-    const contentLines = prepareMessageLines(message.text, contentWidth);
-    contentLines.forEach((line, idx) => {
+  if (messages.length > 0) {
+    // Sort messages by timestamp
+    const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+
+    sortedMessages.forEach((message, idx) => {
+      // Add header line
+      processedLines.push({
+        type: 'header',
+        user: message.sender || 'Unknown',
+        timestamp: message.timestamp,
+        messageId: message.id || `msg-${idx}`
+      });
+
+      // Process message content into lines that fit within width
+      const contentLines = prepareMessageLines(message.content, contentWidth);
+      contentLines.forEach((line, lineIdx) => {
+        processedLines.push({
+          type: 'content',
+          text: line,
+          messageId: message.id || `msg-${idx}`,
+          lineIndex: lineIdx,
+          hasAttachment: message.content && message.content.startsWith('📎'),
+          isFileMessage: message.content && message.content.startsWith('📎')
+        });
+      });
+
+      // Add a separator between messages
+      const unique = (message.id || `msg-${idx}`) + '-sep';
       processedLines.push({
         type: 'content',
-        text: line,
-        messageId: message.id,
-        lineIndex: idx,
-        hasAttachment: !!message.attachedFile,
-        isFileMessage: message.text && message.text.startsWith('📎')
+        text: " ",
+        messageId: unique,
+        lineIndex: unique,
+        hasAttachment: false,
+        isFileMessage: false
       });
     });
-    const unique = message.id + 1000000
-    processedLines.push({
-      type: 'content',
-      text: " ",
-      messageId: unique,
-      lineIndex: unique,
-      hasAttachment: false,
-      isFileMessage: message.text && message.text.startsWith('📎')
-    });
-  });
+  }
 
   const totalLines = processedLines.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
   // Auto-scroll to bottom when new messages arrive
+  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
+
   useEffect(() => {
     const isAtBottom = scrollOffset === 0;
     const hasNewMessages = messages.length > prevMessageCount;
@@ -99,10 +110,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
     }
 
     setPrevMessageCount(messages.length);
-  }, [messages.length]);
-
-  // Keep track of previous message count
-  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
+  }, [messages.length, scrollOffset, prevMessageCount]);
 
   // Define keymap handlers for navigation
   const handlers = {
@@ -153,10 +161,10 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
         </Text>
       </Box>
 
-      {messages.length === 0 ? (
+      {!messages || messages.length === 0 ? (
         <Box>
           <Text color={mutedTextColor} italic>
-            No messages in this room yet
+            {activeRoom ? 'No messages in this room yet' : 'Select a room to view messages'}
           </Text>
         </Box>
       ) : (
@@ -169,16 +177,31 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
             {visibleLines.map((line, idx) => {
               if (line.type === 'header') {
                 return (
-                  <Box overflow={"hidden"} key={`h-${line.messageId}-${idx}`} width={contentWidth}>
-                    <Text color={primaryColor} bold>{line.user}</Text>
+                  <Box
+                    overflow={"hidden"}
+                    key={`h-${line.messageId}-${idx}`}
+                    width={contentWidth}
+                  >
+                    <Text
+                      color={line.user === identity?.username ? primaryColor : secondaryColor}
+                      bold
+                    >
+                      {line.user}
+                    </Text>
                     <Text> </Text>
                     <Text color={mutedTextColor}>{formatTime(line.timestamp)}</Text>
                   </Box>
                 );
               } else {
                 return (
-                  <Box overflow="hidden" key={`c-${line.messageId}-${line.lineIndex}-${idx}`} width={contentWidth}>
-                    <Text color={line.isFileMessage ? secondaryColor : undefined}>{sanitizeTextForTerminal(line.text)}</Text>
+                  <Box
+                    overflow="hidden"
+                    key={`c-${line.messageId}-${line.lineIndex}-${idx}`}
+                    width={contentWidth}
+                  >
+                    <Text color={line.isFileMessage ? secondaryColor : undefined}>
+                      {sanitizeTextForTerminal(line.text)}
+                    </Text>
                   </Box>
                 );
               }

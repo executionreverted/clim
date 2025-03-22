@@ -9,7 +9,7 @@ import useKeymap from './hooks/useKeymap.js';
 import { createExampleConfig } from './utils/keymap.js';
 import { ThemeProvider } from './contexts/ThemeContext.js';
 import { createThemeSystem } from './utils/theme.js';
-
+import { P2PRoomProvider } from './contexts/P2PRoomContext.js';
 // Main App component
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
@@ -56,31 +56,34 @@ const App = () => {
 
   return (
     <ThemeProvider>
-      <Box
-        flexDirection="column"
-        width={terminalWidth}
-        height={terminalHeight}
-      >
-        {currentPage === 'welcome' && (
-          <Welcome
-            onStart={(w) => setCurrentPage(w)}
-            width={terminalWidth}
-            height={terminalHeight}
-          />
-        )}
 
-        {currentPage === 'explorer' && (
-          <FileExplorer onBack={() => setCurrentPage('welcome')} />
-        )}
+      <P2PRoomProvider>
+        <Box
+          flexDirection="column"
+          width={terminalWidth}
+          height={terminalHeight}
+        >
+          {currentPage === 'welcome' && (
+            <Welcome
+              onStart={(w) => setCurrentPage(w)}
+              width={terminalWidth}
+              height={terminalHeight}
+            />
+          )}
 
-        {currentPage === 'chat' && (
-          <Chat onBack={() => setCurrentPage('welcome')} />
-        )}
+          {currentPage === 'explorer' && (
+            <FileExplorer onBack={() => setCurrentPage('welcome')} />
+          )}
 
-        {currentPage === 'options' && (
-          <Options onBack={() => setCurrentPage('welcome')} />
-        )}
-      </Box>
+          {currentPage === 'chat' && (
+            <Chat onBack={() => setCurrentPage('welcome')} />
+          )}
+
+          {currentPage === 'options' && (
+            <Options onBack={() => setCurrentPage('welcome')} />
+          )}
+        </Box>
+      </P2PRoomProvider>
     </ThemeProvider>
   );
 };

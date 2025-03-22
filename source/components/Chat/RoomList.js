@@ -1,4 +1,4 @@
-// components/Chat/RoomList.js
+// components/Chat/RoomList.js - Updated for P2P integration
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
@@ -12,16 +12,22 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
     activeRoomId,
     setActiveRoomId,
     inputMode,
-    inputValue
+    inputValue,
+    peers
   } = useChat();
+
+  const currentTheme = useThemeUpdate();
   const {
     primaryColor,
     secondaryColor,
-    mutedTextColor,
+    errorColor,
+    successColor,
     warningColor,
+    mutedTextColor,
     borderColor,
     activeBorderColor,
-  } = useThemeUpdate().colors
+  } = currentTheme.colors;
+
   const [highlightedIndex, setHighlightedIndex] = useState(
     rooms.findIndex(room => room.id === activeRoomId) || 0
   );
@@ -42,11 +48,13 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
         setScrollOffset(index - maxVisibleItems + 1);
       }
     }
-  }, [activeRoomId, rooms, scrollOffset, maxVisibleItems]);
+  }, [activeRoomId]);
 
   // Define handlers for room navigation
   const handlers = {
     navigateUp: () => {
+      if (rooms.length === 0) return;
+
       const newIndex = Math.max(0, highlightedIndex - 1);
       setHighlightedIndex(newIndex);
       setActiveRoomId(rooms[newIndex].id);
@@ -57,6 +65,8 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
       }
     },
     navigateDown: () => {
+      if (rooms.length === 0) return;
+
       const newIndex = Math.min(rooms.length - 1, highlightedIndex + 1);
       setHighlightedIndex(newIndex);
       setActiveRoomId(rooms[newIndex].id);
@@ -76,7 +86,20 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
   // Get human-readable key for adding a room
   const addRoomKey = getBindingDescription(contextBindings.addRoom);
 
+  // Calculate visible rooms based on scroll offset
   const visibleRooms = rooms.slice(scrollOffset, scrollOffset + maxVisibleItems);
+
+  // Get status icon for room based on its status and peer count
+  const getStatusIcon = (room) => {
+    const peerCount = peers[room.id] || 0;
+
+    if (room.status === 'error') return { icon: '🔴', color: errorColor };
+    if (room.status === 'connecting') return { icon: '🔄', color: warningColor };
+
+    // Connected status with peer indication
+    if (peerCount > 0) return { icon: '🟢', color: successColor };
+    return { icon: '⚪', color: mutedTextColor };
+  };
 
   return (
     <Box
@@ -89,13 +112,18 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
     >
       <Box>
         <Text bold underline wrap="truncate">
-          Rooms {isFocused && inputMode ? "(Adding)" : ""}
+          Rooms {isFocused && inputMode ? "(Adding)" : `(${rooms.length})`}
         </Text>
       </Box>
 
       {isFocused && inputMode ? (
         <Box>
           <Text color={warningColor}>New room: {inputValue || "Type name..."}</Text>
+        </Box>
+      ) : rooms.length === 0 ? (
+        <Box>
+          <Text color={mutedTextColor} italic>No rooms available</Text>
+          <Text color={mutedTextColor} italic>Press '{addRoomKey}' to add</Text>
         </Box>
       ) : (
         <>
@@ -108,6 +136,8 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
           {visibleRooms.map((room, index) => {
             const actualIndex = index + scrollOffset;
             const isSelected = actualIndex === highlightedIndex;
+            const status = getStatusIcon(room);
+            const peerCount = peers[room.id] || 0;
 
             return (
               <Box key={room.id}>
@@ -116,7 +146,9 @@ const RoomList = ({ width = 20, height = 20, isFocused = false }) => {
                   bold={isSelected}
                   wrap="truncate"
                 >
-                  {isSelected && isFocused ? ">" : " "} {room.name}
+                  {isSelected && isFocused ? ">" : " "}
+                  <Text color={status.color}>{status.icon}</Text> {room.name}
+                  <Text color={mutedTextColor}> ({peerCount})</Text>
                 </Text>
               </Box>
             );

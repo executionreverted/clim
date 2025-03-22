@@ -1,4 +1,4 @@
-// Fixed ChatLayout.js to properly handle file sharing
+// components/Chat/ChatLayout.js - Updated for P2P integration
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/ChatContext.js';
@@ -20,20 +20,22 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     setInputValue,
     handleInputSubmit,
     onBack,
-    setShowFileExplorer
+    setShowFileExplorer,
+    peers,
+    activeRoomId,
+    rooms
   } = useChat();
+
+  const currentTheme = useThemeUpdate();
   const {
     primaryColor,
     secondaryColor,
-    textColor,
-    mutedTextColor,
-    errorColor,
-    successColor,
     warningColor,
     infoColor,
     borderColor,
     activeBorderColor,
-  } = useThemeUpdate()
+  } = currentTheme.colors;
+
   // Calculate panel widths based on terminal size
   const availableWidth = Math.max(60, width);
   const roomListWidth = Math.max(15, Math.floor(availableWidth * 0.15));
@@ -46,10 +48,12 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const inputBarHeight = 3;
   const contentHeight = Math.max(10, height - topBarHeight - bottomHelpHeight - inputBarHeight - 2);
 
+  // Get peer count for active room
+  const peerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
+
   // Define handlers for chat actions
   const handlers = {
     switchPanel: () => {
-
       if (inputMode) return;
       // Cycle through panels: rooms -> messages -> users -> input -> rooms
       if (focusedPanel === 'rooms') setFocusedPanel('messages');
@@ -72,6 +76,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     },
     back: () => {
       if (inputMode) {
+        setInputMode(false);
         return;
       }
 
@@ -92,7 +97,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     exit: () => onBack && onBack()
   };
 
-  // Get additional keybindings from the ChatContext
+  // Add room commands
   const chatContextHandlers = {
     addRoom: () => {
       if (focusedPanel === 'rooms') {
@@ -118,7 +123,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       width={width}
       height={height}
     >
-      <TopBar width={width} />
+      <TopBar width={width} peerCount={peerCount} />
 
       <Box
         flexDirection="row"
@@ -141,6 +146,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
           width={userListWidth}
           height={contentHeight}
           isFocused={focusedPanel === 'users'}
+          peerCount={peerCount}
         />
       </Box>
 
@@ -153,7 +159,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
         <Text dimColor>
           [{switchPanelKey}] Switch panels | [{focusInputKey}] Focus input | [{backKey}] Back/Exit |
           {focusedPanel === 'rooms' && ` [${addRoomKey}] Add room | `}
-          [{shareFileKey}] or /send: Share file | Press ENTER to chat
+          [{shareFileKey}] or /send: Share file | /join code | /invite | /profile name
         </Text>
       </Box>
     </Box>
