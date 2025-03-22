@@ -9,7 +9,7 @@ import clipboardy from 'clipboardy';
 import { randomBytes } from 'crypto';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + Math.floor(Math.random() * 1000));
 const ROOMS_FILE = path.join(CONFIG_DIR, 'rooms.json');
 const USERS_FILE = path.join(CONFIG_DIR, 'users.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
@@ -126,6 +126,10 @@ function reducer(state, action) {
       return state;
   }
 }
+
+
+
+
 
 // Helper function to create room topic from room ID
 function createRoomTopic(roomId) {
@@ -285,6 +289,47 @@ export function P2PRoomProvider({ children }) {
     }
   }, [state.users]);
 
+
+  useEffect(() => {
+    // Define the cleanup function
+    const cleanupSwarms = async () => {
+      console.log(`Cleaning up ${swarmRefs.current.size} swarm connections...`);
+
+      for (const [roomId, swarm] of swarmRefs.current.entries()) {
+        try {
+          console.log(`Closing swarm for room ${roomId}...`);
+          await swarm.destroy();
+          console.log(`Swarm for room ${roomId} closed successfully`);
+        } catch (err) {
+          console.error(`Error closing swarm for room ${roomId}:`, err.message);
+        }
+      }
+
+      // Clear all references
+      swarmRefs.current.clear();
+      console.log('All swarm connections closed');
+    };
+
+    // Handle CTRL+C and other termination signals
+    const handleExit = async () => {
+      console.log('Application terminating, closing connections...');
+      await cleanupSwarms();
+      process.exit(0);
+    };
+
+    // Register the handlers
+    process.on('SIGINT', handleExit);
+    process.on('SIGTERM', handleExit);
+
+    // Clean up event listeners when component unmounts
+    return () => {
+      process.removeListener('SIGINT', handleExit);
+      process.removeListener('SIGTERM', handleExit);
+    };
+  }, []);
+
+
+
   // Handle incoming message and extract user info
   const processIncomingMessage = (roomId, data) => {
     try {
@@ -420,7 +465,23 @@ export function P2PRoomProvider({ children }) {
         socket.on('data', data => {
           processIncomingMessage(room.id, data);
         });
+        socket.on('error', err => {
 
+        });
+        swarm.on('error', (err) => {
+          // Log error for debugging but suppress it from console
+          console.debug(`Swarm error in room ${room.id}: ${err.message}`);
+
+          // Update room status if it's a serious connection error
+          if (err.message.includes('connection timed out') ||
+            err.message.includes('connection failed') ||
+            err.message.includes('network error')) {
+            dispatch({
+              type: ACTIONS.UPDATE_ROOM_STATUS,
+              payload: { roomId: room.id, status: 'reconnecting' }
+            });
+          }
+        });
         // Handle socket close
         socket.on('close', () => {
           // Update peer count

@@ -18,7 +18,11 @@
 		"dist"
 	],
 	"dependencies": {
+		"clipboardy": "^4.0.0",
 		"filesize": "^10.1.6",
+		"hypercore": "^11.0.48",
+		"hyperdrive": "^12.1.0",
+		"hyperswarm": "^4.10.1",
 		"ink": "^4.1.0",
 		"ink-big-text": "^2.0.0",
 		"ink-gradient": "^3.0.0",
