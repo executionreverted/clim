@@ -180,7 +180,7 @@ export function RoomBaseProvider({ children }) {
   const roomInstances = useRef(new Map()); // Map roomId -> RoomBase instance
   const corestores = useRef(new Map()); // Map roomId -> Corestore instance
   const messageListeners = useRef(new Map()); // Map roomId -> function[] (for message event listeners)
-
+  const joinInProgress = useRef(false)
   // Ensure config directory exists and load identity
   useEffect(() => {
     try {
@@ -494,6 +494,7 @@ export function RoomBaseProvider({ children }) {
   // Function to join a room by invite code
   // Function to join a room by invite code with better resource management
   const joinRoom = async (inviteCode) => {
+    if (joinInProgress.current) return;
     if (!inviteCode) return null;
 
     let store = null;
@@ -509,6 +510,7 @@ export function RoomBaseProvider({ children }) {
 
       // Determine if it's an invite code
       if (inviteCode) {
+        joinInProgress.current = true
         // Generate a unique room ID
         roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -574,7 +576,7 @@ export function RoomBaseProvider({ children }) {
             console.error('Error updating peer info:', peerErr);
           }
         }, 1000);
-
+        joinInProgress.current = false
         return roomId;
       } else {
         // It's a room name, create a new room
