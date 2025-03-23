@@ -91,7 +91,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     createInviteCode,
     updateProfile,
     roomConnections,
-    error
+    error,
+    loadMoreMessages
   } = useRoomBase();
 
   // Reference to last message for auto-scrolling
@@ -311,6 +312,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     showFileExplorer,
     setShowFileExplorer,
     handleFileSelect,
+    loadMoreMessages,
     onBack,
     error,
 

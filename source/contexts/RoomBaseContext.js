@@ -26,7 +26,8 @@ const ACTIONS = {
   SET_ERROR: 'SET_ERROR',
   SET_IDENTITY: 'SET_IDENTITY',
   SET_PEERS: 'SET_PEERS',
-  SET_CONNECTIONS: 'SET_CONNECTIONS'
+  SET_CONNECTIONS: 'SET_CONNECTIONS',
+  UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES'
 };
 
 // Initial state
@@ -102,7 +103,15 @@ function reducer(state, action) {
           [action.payload.roomId]: action.payload.connections
         }
       };
-
+    case ACTIONS.UPDATE_ROOM_MESSAGES:
+      return {
+        ...state,
+        rooms: state.rooms.map(room =>
+          room.id === action.payload.roomId
+            ? { ...room, messages: action.payload.messages }
+            : room
+        )
+      };
     default:
       return state;
   }
@@ -264,60 +273,45 @@ export function RoomBaseProvider({ children }) {
         // Get messages using IndexStream properly
         let messages = [];
         try {
-          const messagesStream = await room.getMessages();
+          // Get message stream with limit
+          const stream = room.getMessages({ limit: 1, reverse: true });
 
-          // Check if it's a regular array
-          if (Array.isArray(messagesStream)) {
-            messages = messagesStream;
-          }
-          // Otherwise handle as a stream
-          else {
-            // Process stream using a callback approach
-            messages = await new Promise((resolve, reject) => {
-              const results = [];
+          // Process the stream
+          await new Promise(resolve => {
+            // If it's a promise (already an array)
+            if (stream.then) {
+              stream.then(result => {
+                messages = result;
+                resolve();
+              }).catch(err => {
+                console.error(`Error processing message stream for room ${roomKey.id}:`, err);
+                resolve();
+              });
+              return;
+            }
 
-              // Try handling as a Node.js stream with event handlers
-              if (typeof messagesStream.on === 'function') {
-                messagesStream.on('data', (data) => {
-                  // Extract message data correctly
-                  if (data && typeof data === 'object') {
-                    const messageData = data.value !== undefined ? data.value : data;
-                    results.push(messageData);
-                  }
-                });
+            // Handle as Node.js stream
+            if (stream.on) {
+              stream.on('data', message => {
+                messages.push(message);
+              });
 
-                messagesStream.on('error', (err) => {
-                  console.error(`Stream error: ${err.message}`);
-                  reject(err);
-                });
+              stream.on('error', err => {
+                console.error(`Error reading message stream for room ${roomKey.id}:`, err);
+                resolve();
+              });
 
-                messagesStream.on('end', () => {
-                  resolve(results);
-                });
-              }
-              // If it doesn't have stream methods, try as a collection with forEach
-              else if (typeof messagesStream.forEach === 'function') {
-                messagesStream.forEach(item => {
-                  results.push(item);
-                });
-                resolve(results);
-              }
-              // Last resort - try to convert to array if possible
-              else {
-                try {
-                  const arrayData = Array.from(messagesStream);
-                  resolve(arrayData);
-                } catch (err) {
-                  console.error(`Cannot convert to array: ${err.message}`);
-                  resolve([]);
-                }
-              }
-            });
-          }
-
+              stream.on('end', () => {
+                resolve();
+              });
+            } else {
+              // Fallback - assume it's already an array
+              messages = Array.isArray(stream) ? stream : [];
+              resolve();
+            }
+          });
         } catch (msgErr) {
           console.error(`Error retrieving messages for room ${roomKey.id}:`, msgErr);
-          messages = [];
         }
 
         // Add room to state
@@ -332,6 +326,7 @@ export function RoomBaseProvider({ children }) {
 
         // Initialize peer count
         updatePeerInfo(roomKey.id);
+
       } catch (err) {
         console.error(`Error initializing room ${roomKey.id}:`, err);
         roomsWithMessages.push({
@@ -601,7 +596,7 @@ export function RoomBaseProvider({ children }) {
       const roomStorePath = path.join(ROOMS_DIR, roomId);
       try {
         // Commented out to preserve data - uncomment if you want to delete room data
-        // fs.rmSync(roomStorePath, { recursive: true, force: true });
+        fs.rm(roomStorePath, { recursive: true, force: true }, () => { });
       } catch (err) {
         console.error(`Error removing room directory: ${err.message}`);
       }
@@ -613,6 +608,74 @@ export function RoomBaseProvider({ children }) {
       return false;
     }
   };
+
+
+  // Simpler version of the loadMoreMessages function
+  // Add this debugging version of loadMoreMessages to RoomBaseContext.js
+
+  // In RoomBaseContext.js
+
+  const loadMoreMessages = async (roomId) => {
+    if (!roomId) return false;
+
+    const room = roomInstances.current.get(roomId);
+    if (!room) return false;
+
+    try {
+      // Get current room from state
+      const currentRoom = state.rooms.find(r => r.id === roomId);
+      if (!currentRoom) return false;
+
+      // Get current messages
+      const currentMessages = currentRoom.messages || [];
+
+      // Find oldest message to use as starting point
+      const oldestTimestamp = currentMessages.length > 0
+        ? Math.min(...currentMessages.map(msg => msg.timestamp || Infinity))
+        : Infinity;
+
+      // Get older messages
+      const olderMessagesStream = room.getMessages({
+        limit: 1,
+        lt: oldestTimestamp !== Infinity ? { timestamp: oldestTimestamp } : undefined,
+        reverse: true
+      });
+
+      // Process stream
+      let olderMessages = [];
+
+      if (olderMessagesStream.then) {
+        olderMessages = await olderMessagesStream;
+      } else if (olderMessagesStream.on) {
+        olderMessages = await new Promise(resolve => {
+          const results = [];
+          olderMessagesStream.on('data', msg => results.push(msg));
+          olderMessagesStream.on('end', () => resolve(results));
+          olderMessagesStream.on('error', () => resolve([]));
+        });
+      } else if (Array.isArray(olderMessagesStream)) {
+        olderMessages = olderMessagesStream;
+      }
+
+      // If no older messages found
+      if (olderMessages.length === 0) return false;
+
+      // Update room with combined messages
+      dispatch({
+        type: ACTIONS.UPDATE_ROOM_MESSAGES,
+        payload: {
+          roomId,
+          messages: [...olderMessages, ...currentMessages]
+        }
+      });
+
+      return true;
+    } catch (err) {
+      console.error(`Error loading more messages:`, err);
+      return false;
+    }
+  };
+
 
   // Function to send a message
   const sendMessage = async (roomId, content, isSystemMessage = false) => {
@@ -721,7 +784,8 @@ export function RoomBaseProvider({ children }) {
     setActiveRoom,
     createInviteCode,
     updateProfile,
-    getConnections
+    getConnections,
+    loadMoreMessages,
   };
 
   return (

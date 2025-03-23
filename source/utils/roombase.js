@@ -412,13 +412,55 @@ class RoomBase extends ReadyResource {
    * @param {boolean} opts.includeMarker - Include pagination marker in response
    * @returns {Object} - Messages and pagination marker
    */
-  async getMessages(opts = {}) {
+  getMessages(opts = {}) {
     if (!this.base || !this.base.view) {
       throw new Error("Error initializing corestore");
     }
-    return await this.base.view.find('@roombase/messages', {});
+
+    // Set defaults
+    const options = {
+      limit: opts.limit || 50,
+      reverse: opts.reverse !== undefined ? opts.reverse : true
+    };
+
+    // Create the query object with proper formatting
+    const query = {};
+
+    // Handle the timestamp filtering formats
+    if (opts.lt && opts.lt.timestamp) {
+      query.timestamp = { $lt: opts.lt.timestamp };
+    }
+
+    if (opts.lte && opts.lte.timestamp) {
+      query.timestamp = { ...(query.timestamp || {}), $lte: opts.lte.timestamp };
+    }
+
+    if (opts.gt && opts.gt.timestamp) {
+      query.timestamp = { ...(query.timestamp || {}), $gt: opts.gt.timestamp };
+    }
+
+    if (opts.gte && opts.gte.timestamp) {
+      query.timestamp = { ...(query.timestamp || {}), $gte: opts.gte.timestamp };
+    }
+
+    // Return the stream directly
+    return this.base.view.find('@roombase/messages', query, options);
   }
 
+
+  async getMessageCount() {
+    if (!this.base || !this.base.view) {
+      throw new Error("Error initializing corestore");
+    }
+
+    try {
+      const { count } = await this.base.view.stats('@roombase/messages');
+      return count;
+    } catch (err) {
+      console.error("Error getting message count:", err);
+      return 0;
+    }
+  }
   /**
  * Get all writers with access to this room
  *

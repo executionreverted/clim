@@ -31,6 +31,7 @@ const TopBar = ({ width = 100 }) => {
   // Status for the room
   const getStatusText = () => {
     if (!activeRoom) return 'No room selected';
+    if (error) return error
 
     if (activeRoom.status === 'error') return JSON.stringify(activeRoom.error);
     if (activeRoom.status === 'connecting') return 'Connecting...';

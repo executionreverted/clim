@@ -1,5 +1,5 @@
-// components/Chat/MessageList.js - Updated to use RoomBaseChatContext
-import React, { useState, useEffect } from 'react';
+// components/Chat/MessageList.js
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
@@ -14,13 +14,10 @@ const formatTime = (timestamp) => {
 // Calculate effective width of a string, accounting for emoji and wide characters
 const getEffectiveWidth = (str) => {
   if (!str) return 0;
-
   // Count emoji and other wide characters as double width
-  // This is a simplified approach - a comprehensive solution would use a proper width library
   const emojiRegex = /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu;
   const normalText = str.replace(emojiRegex, '');
   const emojiCount = str.length - normalText.length;
-
   // Count normal chars as 1, emoji as 2
   return normalText.length + (emojiCount * 2);
 };
@@ -28,11 +25,9 @@ const getEffectiveWidth = (str) => {
 // Split long message text into lines that fit within available width
 const prepareMessageLines = (text, maxWidth) => {
   if (!text) return [];
-
   // First split by natural line breaks
   const naturalLines = text.replaceAll('␍', '\n').replaceAll('↵', '\n').split('\n');
   const result = [];
-
   // Then ensure each line fits within maxWidth
   naturalLines.forEach(line => {
     if (getEffectiveWidth(line) <= maxWidth) {
@@ -40,9 +35,8 @@ const prepareMessageLines = (text, maxWidth) => {
       result.push(line);
     } else {
       // Line is too long, need to break it
-      let currentPos = 0;
-      let currentWidth = 0;
       let currentChunk = '';
+      let currentWidth = 0;
 
       // Process character by character to account for emoji width
       for (let i = 0; i < line.length; i++) {
@@ -68,13 +62,16 @@ const prepareMessageLines = (text, maxWidth) => {
       }
     }
   });
-
   return result;
 };
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
-  const { activeRoom, inputMode } = useChat();
+  const { activeRoom, activeRoomId, inputMode, loadMoreMessages } = useChat();
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const scrollPositionRef = useRef(0);
+  const previousMessagesCountRef = useRef(0);
 
   const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
   const currentTheme = useThemeUpdate();
@@ -85,6 +82,23 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
     borderColor,
     activeBorderColor,
   } = currentTheme.colors;
+
+  // Keep track of messages count to detect new messages
+  useEffect(() => {
+    if (messages.length > previousMessagesCountRef.current) {
+      // New message detected
+      const newMessagesCount = messages.length - previousMessagesCountRef.current;
+
+      // If we're at the bottom (scrollOffset = 0), stay at bottom
+      if (scrollOffset === 0) {
+        setScrollOffset(0);
+      } else {
+        // Otherwise, adjust scrollOffset to stay at same position with new content
+        setScrollOffset(scrollOffset + newMessagesCount);
+      }
+    }
+    previousMessagesCountRef.current = messages.length;
+  }, [messages.length]);
 
   // Calculate available width and height
   const contentWidth = Math.max(20, width - 6); // Adjust for borders and padding
@@ -140,37 +154,65 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const totalLines = processedLines.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
-  // Auto-scroll to bottom when new messages arrive
-  const [prevMessageCount, setPrevMessageCount] = useState(messages.length);
+  // Load more messages when scrolled to top
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !activeRoomId) return;
 
-  useEffect(() => {
-    const isAtBottom = scrollOffset === 0;
-    const hasNewMessages = messages.length > prevMessageCount;
+    setIsLoadingMore(true);
 
-    if ((isAtBottom && hasNewMessages) || messages.length === 1) {
-      setScrollOffset(0);
+    try {
+      const result = await loadMoreMessages(activeRoomId);
+
+      // Only set to false when we get an empty result
+      if (result === false) {
+        console.log("No more messages available");
+        setHasMoreMessages(false);
+      }
+    } catch (err) {
+      console.error("Error loading more messages:", err);
+    } finally {
+      setIsLoadingMore(false);
     }
+  };
 
-    setPrevMessageCount(messages.length);
-  }, [messages.length, scrollOffset, prevMessageCount]);
-
-  // Define keymap handlers for navigation
+  // Define keymap handlers for scrolling
   const handlers = {
     navigateUp: () => {
+      const isAtTopOfVisibleContent = scrollOffset >= maxScrollOffset;
+
+      // If we're at the top and there might be more messages
+      if (isAtTopOfVisibleContent && hasMoreMessages && !isLoadingMore) {
+        // Directly trigger loading more
+        handleLoadMore();
+      }
+
+      // Still allow scrolling up to the current max
       setScrollOffset(prev => Math.min(maxScrollOffset, prev + 1));
     },
     navigateDown: () => {
+      // Scroll down
       setScrollOffset(prev => Math.max(0, prev - 1));
     },
     pageUp: () => {
-      setScrollOffset(prev => Math.min(maxScrollOffset, prev + Math.floor(availableHeight / 2)));
+      // Page up: move selection up by page size
+      const newOffset = Math.min(maxScrollOffset, scrollOffset + Math.floor(availableHeight / 2));
+      setScrollOffset(newOffset);
+
+      // If at the top, try to load more
+      if (newOffset >= maxScrollOffset && hasMoreMessages && !isLoadingMore) {
+        handleLoadMore();
+      }
     },
     pageDown: () => {
-      setScrollOffset(prev => Math.max(0, prev - Math.floor(availableHeight / 2)));
+      // Page down: move selection down by page size
+      setScrollOffset(Math.max(0, scrollOffset - Math.floor(availableHeight / 2)));
     },
     scrollToTop: () => {
-      // Go to top (oldest messages)
+      // Scroll to top and load more if available
       setScrollOffset(maxScrollOffset);
+      if (hasMoreMessages && !isLoadingMore) {
+        handleLoadMore();
+      }
     },
     scrollToBottom: () => {
       // Go to bottom (newest messages)
@@ -200,8 +242,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       <Box marginBottom={1}>
         <Text bold wrap="truncate">
           Messages {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
+          {isLoadingMore ? ' (Loading...)' : ''}
         </Text>
-
       </Box>
 
       {!messages || messages.length === 0 ? (
@@ -215,6 +257,20 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
           flexDirection="column"
           height={availableHeight}
         >
+          {/* Loading indicator */}
+          {isLoadingMore && (
+            <Box width={contentWidth}>
+              <Text color={secondaryColor} italic>Loading older messages...</Text>
+            </Box>
+          )}
+
+          {/* End of history indicator */}
+          {scrollOffset >= maxScrollOffset && !hasMoreMessages && !isLoadingMore && (
+            <Box width={contentWidth}>
+              <Text color={mutedTextColor} italic>Start of conversation history</Text>
+            </Box>
+          )}
+
           {/* Message lines */}
           <Box flexDirection="column">
             {visibleLines.map((line, idx) => {
