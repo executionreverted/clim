@@ -1,4 +1,5 @@
-// contexts/ChatContext.js - Updated to use RoomBaseContext
+// contexts/RoomBaseChatContext.js
+import clipboard from 'clipboardy';
 import React, { useRef, useEffect, createContext, useContext, useReducer, useCallback } from 'react';
 import { matchesKeyBinding, getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
@@ -69,11 +70,11 @@ const chatReducer = (state, action) => {
   }
 };
 
-const ChatContext = createContext();
+const RoomBaseChatContext = createContext();
 
-export const useChat = () => useContext(ChatContext);
+export const useChat = () => useContext(RoomBaseChatContext);
 
-export const ChatProvider = ({ children, onBack }) => {
+export const RoomBaseChatProvider = ({ children, onBack }) => {
   const [state, dispatch] = useReducer(chatReducer, initialState);
 
   // Use the RoomBase context
@@ -87,13 +88,12 @@ export const ChatProvider = ({ children, onBack }) => {
     leaveRoom,
     sendMessage,
     peers,
-    connections,
     createInviteCode,
     updateProfile,
-    identity
+    roomConnections
   } = useRoomBase();
 
-  // Add this at the top of the ChatProvider function:
+  // Reference to last message for auto-scrolling
   const lastMessageRef = useRef(null);
 
   const {
@@ -136,14 +136,15 @@ export const ChatProvider = ({ children, onBack }) => {
 
     if (localInputVal.trim() === '/clear') {
       setInputValue('');
-      // Clearing history isn't implemented in RoomBaseContext yet
       return true;
     }
 
     if (localInputVal.trim().startsWith('/join ')) {
-      const roomName = localInputVal.trim().substring(6);
-      if (roomName) {
-        joinRoom(roomName);
+      const inviteCode = localInputVal.replace("/join ", "").trim();
+      ;
+
+      if (inviteCode) {
+        joinRoom(inviteCode);
         setInputValue('');
         setInputMode(false);
       }
@@ -186,16 +187,14 @@ export const ChatProvider = ({ children, onBack }) => {
       createInviteCode(activeRoomId).then(inviteCode => {
         if (inviteCode) {
           // Display a message to the user that the invite was copied
+          clipboard.writeSync(`/join ${inviteCode}`)
           sendMessage(
             activeRoomId,
-            `Invite code created: ${inviteCode}\nOthers can join using "/join ${inviteCode}"`,
+            `Invite code copied to clipboard! Others can join using "/join ${inviteCode}"`,
             true
           );
         }
-      }).catch(err => {
-        sendMessage(activeRoomId, `Error creating invite: ${err.message}`, true);
       });
-
       setInputValue('');
       return true;
     }
@@ -315,15 +314,14 @@ export const ChatProvider = ({ children, onBack }) => {
 
     // Additional from RoomBase
     peers,
-    identity,
-    connections
+    roomConnections
   };
 
   return (
-    <ChatContext.Provider value={contextValue}>
+    <RoomBaseChatContext.Provider value={contextValue}>
       {children}
-    </ChatContext.Provider>
+    </RoomBaseChatContext.Provider>
   );
 };
 
-export default ChatContext;
+export default RoomBaseChatContext;

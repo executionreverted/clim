@@ -11,13 +11,13 @@ let version = VERSION
 
 // @roombase/writer
 const encoding0 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.buffer.preencode(state, m.key)
   },
-  encode (state, m) {
+  encode(state, m) {
     c.buffer.encode(state, m.key)
   },
-  decode (state) {
+  decode(state) {
     const r0 = c.buffer.decode(state)
 
     return {
@@ -28,19 +28,19 @@ const encoding0 = {
 
 // @roombase/invite
 const encoding1 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.buffer.preencode(state, m.id)
     c.buffer.preencode(state, m.invite)
     c.buffer.preencode(state, m.publicKey)
     c.int.preencode(state, m.expires)
   },
-  encode (state, m) {
+  encode(state, m) {
     c.buffer.encode(state, m.id)
     c.buffer.encode(state, m.invite)
     c.buffer.encode(state, m.publicKey)
     c.int.encode(state, m.expires)
   },
-  decode (state) {
+  decode(state) {
     const r0 = c.buffer.decode(state)
     const r1 = c.buffer.decode(state)
     const r2 = c.buffer.decode(state)
@@ -57,17 +57,17 @@ const encoding1 = {
 
 // @roombase/rooms
 const encoding2 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.string.preencode(state, m.id)
     c.string.preencode(state, m.name)
     c.int.preencode(state, m.createdAt)
   },
-  encode (state, m) {
+  encode(state, m) {
     c.string.encode(state, m.id)
     c.string.encode(state, m.name)
     c.int.encode(state, m.createdAt)
   },
-  decode (state) {
+  decode(state) {
     const r0 = c.string.decode(state)
     const r1 = c.string.decode(state)
     const r2 = c.int.decode(state)
@@ -82,14 +82,14 @@ const encoding2 = {
 
 // @roombase/messages
 const encoding3 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.string.preencode(state, m.id)
     c.string.preencode(state, m.content)
     c.string.preencode(state, m.sender)
     c.int.preencode(state, m.timestamp)
     state.end++ // max flag is 2 so always one byte
   },
-  encode (state, m) {
+  encode(state, m) {
     const flags =
       (m.system ? 1 : 0) |
       (m.received ? 2 : 0)
@@ -100,7 +100,7 @@ const encoding3 = {
     c.int.encode(state, m.timestamp)
     c.uint.encode(state, flags)
   },
-  decode (state) {
+  decode(state) {
     const r0 = c.string.decode(state)
     const r1 = c.string.decode(state)
     const r2 = c.string.decode(state)
@@ -120,13 +120,13 @@ const encoding3 = {
 
 // @roombase/typing
 const encoding4 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.string.preencode(state, m.userId)
     c.string.preencode(state, m.roomId)
     state.end++ // max flag is 1 so always one byte
     c.int.preencode(state, m.timestamp)
   },
-  encode (state, m) {
+  encode(state, m) {
     const flags = m.isTyping ? 1 : 0
 
     c.string.encode(state, m.userId)
@@ -134,7 +134,7 @@ const encoding4 = {
     c.uint.encode(state, flags)
     c.int.encode(state, m.timestamp)
   },
-  decode (state) {
+  decode(state) {
     const r0 = c.string.decode(state)
     const r1 = c.string.decode(state)
     const flags = c.uint.decode(state)
@@ -150,13 +150,13 @@ const encoding4 = {
 
 // @roombase/writer/hyperdb#0
 const encoding5 = {
-  preencode (state, m) {
+  preencode(state, m) {
 
   },
-  encode (state, m) {
+  encode(state, m) {
 
   },
-  decode (state) {
+  decode(state) {
     return {
       key: null
     }
@@ -165,17 +165,17 @@ const encoding5 = {
 
 // @roombase/invite/hyperdb#1
 const encoding6 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.buffer.preencode(state, m.invite)
     c.buffer.preencode(state, m.publicKey)
     c.int.preencode(state, m.expires)
   },
-  encode (state, m) {
+  encode(state, m) {
     c.buffer.encode(state, m.invite)
     c.buffer.encode(state, m.publicKey)
     c.int.encode(state, m.expires)
   },
-  decode (state) {
+  decode(state) {
     const r1 = c.buffer.decode(state)
     const r2 = c.buffer.decode(state)
     const r3 = c.int.decode(state)
@@ -191,15 +191,15 @@ const encoding6 = {
 
 // @roombase/rooms/hyperdb#2
 const encoding7 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.string.preencode(state, m.name)
     c.int.preencode(state, m.createdAt)
   },
-  encode (state, m) {
+  encode(state, m) {
     c.string.encode(state, m.name)
     c.int.encode(state, m.createdAt)
   },
-  decode (state) {
+  decode(state) {
     const r1 = c.string.decode(state)
     const r2 = c.int.decode(state)
 
@@ -213,13 +213,13 @@ const encoding7 = {
 
 // @roombase/messages/hyperdb#3
 const encoding8 = {
-  preencode (state, m) {
+  preencode(state, m) {
     c.string.preencode(state, m.content)
     c.string.preencode(state, m.sender)
     c.int.preencode(state, m.timestamp)
     state.end++ // max flag is 2 so always one byte
   },
-  encode (state, m) {
+  encode(state, m) {
     const flags =
       (m.system ? 1 : 0) |
       (m.received ? 2 : 0)
@@ -229,7 +229,7 @@ const encoding8 = {
     c.int.encode(state, m.timestamp)
     c.uint.encode(state, flags)
   },
-  decode (state) {
+  decode(state) {
     const r1 = c.string.decode(state)
     const r2 = c.string.decode(state)
     const r3 = c.int.decode(state)
@@ -248,17 +248,17 @@ const encoding8 = {
 
 // @roombase/typing/hyperdb#4
 const encoding9 = {
-  preencode (state, m) {
+  preencode(state, m) {
     state.end++ // max flag is 1 so always one byte
     c.int.preencode(state, m.timestamp)
   },
-  encode (state, m) {
+  encode(state, m) {
     const flags = m.isTyping ? 1 : 0
 
     c.uint.encode(state, flags)
     c.int.encode(state, m.timestamp)
   },
-  decode (state) {
+  decode(state) {
     const flags = c.uint.decode(state)
 
     return {
@@ -270,27 +270,27 @@ const encoding9 = {
   }
 }
 
-function setVersion (v) {
+function setVersion(v) {
   version = v
 }
 
-function encode (name, value, v = VERSION) {
+function encode(name, value, v = VERSION) {
   version = v
   return c.encode(getEncoding(name), value)
 }
 
-function decode (name, buffer, v = VERSION) {
+function decode(name, buffer, v = VERSION) {
   version = v
   return c.decode(getEncoding(name), buffer)
 }
 
-function getEnum (name) {
+function getEnum(name) {
   switch (name) {
     default: throw new Error('Enum not found ' + name)
   }
 }
 
-function getEncoding (name) {
+function getEncoding(name) {
   switch (name) {
     case '@roombase/writer': return encoding0
     case '@roombase/invite': return encoding1
@@ -306,18 +306,18 @@ function getEncoding (name) {
   }
 }
 
-function getStruct (name, v = VERSION) {
+function getStruct(name, v = VERSION) {
   const enc = getEncoding(name)
   return {
-    preencode (state, m) {
+    preencode(state, m) {
       version = v
       enc.preencode(state, m)
     },
-    encode (state, m) {
+    encode(state, m) {
       version = v
       enc.encode(state, m)
     },
-    decode (state) {
+    decode(state) {
       version = v
       return enc.decode(state)
     }

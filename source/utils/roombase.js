@@ -1,14 +1,14 @@
 // roombase.js - Room-specific P2P database built on autobase
-const Autobase = require('autobase')
-const BlindPairing = require('blind-pairing')
-const HyperDB = require('hyperdb')
-const Hyperswarm = require('hyperswarm')
-const ReadyResource = require('ready-resource')
-const z32 = require('z32')
-const b4a = require('b4a')
-const { Router, dispatch } = require('./spec/hyperdispatch')
-const db = require('./spec/db/index.js')
-const crypto = require('crypto')
+import Autobase from 'autobase';
+import BlindPairing from 'blind-pairing';
+import HyperDB from 'hyperdb';
+import Hyperswarm from 'hyperswarm';
+import ReadyResource from 'ready-resource';
+import z32 from 'z32';
+import b4a from 'b4a';
+import { Router, dispatch } from './spec/hyperdispatch/index.js'
+import db from './spec/db/index.js';
+import crypto from 'crypto';
 
 /**
  * Class for initiating pairing with a RoomBase
@@ -329,18 +329,48 @@ class RoomBase extends ReadyResource {
   // ---------- Message API ----------
 
   async sendMessage(message) {
-    // Ensure message has required fields matching app structure
-    const msg = {
-      id: message.id || crypto.randomUUID(),
-      content: message.content,
-      sender: message.sender || this.base.writerKey.toString('hex'),
-      timestamp: message.timestamp || Date.now(),
-      system: !!message.system,
-      received: false
-    }
+    // Make sure base is ready
+    await this.base.ready();
 
-    await this.base.append(dispatch('@roombase/send-message', msg))
-    return msg.id
+    const msg = {
+      id: message.id || `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
+      content: message.content || '',
+      sender: message.sender || 'Unknown',
+      publicKey: message.publicKey || (this.base.writerKey ? this.base.writerKey.toString('hex') : null),
+      timestamp: message.timestamp || Date.now(),
+      system: !!message.system
+    };
+
+    try {
+      // Use the dispatch function from hyperdispatch for proper message encoding
+      const { dispatch } = require('./spec/hyperdispatch');
+
+      // Properly format message for the autobase
+      const dispatchData = dispatch('@roombase/send-message', msg);
+
+      // Append to autobase directly - this is critical for persistence
+      await this.base.append(dispatchData);
+
+      console.log(`Message ${msg.id} appended to autobase with dispatch`);
+
+      // Emit event for real-time updates
+      this.emit('new-message', msg);
+
+      return msg.id;
+    } catch (err) {
+      console.error(`Error saving message with dispatch:`, err);
+
+      // Fall back to direct view insertion as last resort
+      try {
+        await this.base.view.insert('@roombase/messages', msg);
+        console.log(`Message ${msg.id} inserted directly to view (fallback)`);
+        this.emit('new-message', msg);
+        return msg.id;
+      } catch (innerErr) {
+        console.error(`All message saving methods failed:`, innerErr);
+        throw new Error(`Failed to persist message: ${err.message}`);
+      }
+    }
   }
 
   async deleteMessage(messageId) {
@@ -366,6 +396,7 @@ class RoomBase extends ReadyResource {
     return this.base.view.get('@roombase/rooms', { id: this.roomId })
   }
 
+
   /**
    * Get paginated messages with various filtering options
    *
@@ -381,86 +412,40 @@ class RoomBase extends ReadyResource {
    * @returns {Object} - Messages and pagination marker
    */
   async getMessages(opts = {}) {
-    const {
-      limit = 20,
-      before,
-      after,
-      fromId,
-      beforeId,
-      sender,
-      reverse = true,
-      includeMarker = true
-    } = opts
-
-    // Get all messages for this room
-    let messages = await this.base.view.find('@roombase/messages', {})
-    let startMessage = null
-    let endMessage = null
-    let hasMore = false
-
-    // Apply filters in sequence
-    if (sender) {
-      messages = messages.filter(msg => msg.sender === sender)
+    if (!this.base || !this.base.view) {
+      throw new Error("error initializing corestore")
     }
 
-    if (before) {
-      messages = messages.filter(msg => msg.timestamp < before)
-    }
-
-    if (after) {
-      messages = messages.filter(msg => msg.timestamp > after)
-    }
-
-    // Sort by timestamp
-    messages.sort((a, b) => reverse ? b.timestamp - a.timestamp : a.timestamp - b.timestamp)
-
-    // Handle ID-based pagination
-    if (fromId) {
-      const fromIndex = messages.findIndex(msg => msg.id === fromId)
-      if (fromIndex >= 0) {
-        // Start from the message after the reference point
-        messages = messages.slice(fromIndex + 1)
+    try {
+      // Direct query to view
+      const messages$ = await this.base.view.find('@roombase/messages', {});
+      const messages = messages$.value
+      if (!Array.isArray(messages)) {
+        console.warn('Messages not returned as array:', messages);
+        return { messages: [] };
       }
+
+      // Sort messages by timestamp
+      const sortedMessages = [...messages].sort((a, b) =>
+        (opts.reverse === false) ? (a.timestamp - b.timestamp) : (b.timestamp - a.timestamp)
+      );
+
+      // Apply any filters from opts
+      const filteredMessages = sortedMessages.slice(0, opts.limit || sortedMessages.length);
+
+      console.log(`Retrieved ${filteredMessages.length} messages`);
+
+      return {
+        messages: filteredMessages,
+        pagination: {
+          hasMore: messages.length > filteredMessages.length
+        }
+      };
+    } catch (err) {
+      console.error('Error retrieving messages:', err);
+      return { messages: [] };
     }
-
-    if (beforeId) {
-      const beforeIndex = messages.findIndex(msg => msg.id === beforeId)
-      if (beforeIndex >= 0) {
-        // Include all messages before this point
-        messages = messages.slice(0, beforeIndex)
-      }
-    }
-
-    // Store the first and last message for pagination markers
-    if (messages.length > 0) {
-      startMessage = messages[0]
-      endMessage = messages[messages.length - 1]
-    }
-
-    // Check if there are more messages than the limit
-    hasMore = messages.length > limit
-
-    // Apply limit
-    if (limit && messages.length > limit) {
-      messages = messages.slice(0, limit)
-    }
-
-    // Build the response
-    const result = { messages }
-
-    // Include pagination markers if requested
-    if (includeMarker && messages.length > 0) {
-      result.pagination = {
-        hasMore,
-        nextId: hasMore ? messages[messages.length - 1].id : null,
-        firstTimestamp: startMessage ? startMessage.timestamp : null,
-        lastTimestamp: endMessage ? endMessage.timestamp : null
-      }
-    }
-
-    return result
   }
-
   /**
    * Get messages since a specific timestamp or last read message
    *
@@ -509,62 +494,81 @@ class RoomBase extends ReadyResource {
   }
 
   /**
-   * Get all writers with access to this room
-   *
-   * @param {Object} opts - Query options
-   * @param {boolean} opts.includeDetails - Include additional details about writers
-   * @param {boolean} opts.includeMetadata - Include metadata about writer activity
-   * @returns {Array} - Array of writer information
-   */
+ * Get all writers with access to this room
+ *
+ * @param {Object} opts - Query options
+ * @param {boolean} opts.includeDetails - Include additional details about writers
+ * @param {boolean} opts.includeMetadata - Include metadata about writer activity
+ * @returns {Array} - Array of writer information
+ */
   async getWriters(opts = {}) {
-    const { includeDetails = false, includeMetadata = false } = opts
+    const { includeDetails = false, includeMetadata = false } = opts;
 
     // Get all writer keys who have access to this room
-    const writers = []
+    const writers = [];
 
-    // Local writer is always included
-    writers.push({
-      key: this.base.writerKey.toString('hex'),
-      isLocal: true,
-      active: true,
-      lastSeen: Date.now()
-    })
+    // Add local writer if it exists
+    if (this.base?.writerKey) {
+      writers.push({
+        key: this.base.writerKey.toString('hex'),
+        isLocal: true,
+        active: true,
+        lastSeen: Date.now()
+      });
+    }
 
-    // Add other writers from base
-    for (const writer of this.base.activeWriters) {
-      if (!b4a.equals(writer.core.key, this.base.writerKey)) {
-        const writerInfo = {
-          key: writer.core.key.toString('hex'),
-          isLocal: false,
-          active: writer.core.length > 0
+    // Add other writers from base if it exists
+    if (this.base?.activeWriters) {
+      for (const writer of this.base.activeWriters) {
+        if (writer?.core?.key && (!this.base.writerKey || !writer.core.key.equals(this.base.writerKey))) {
+          const writerInfo = {
+            key: writer.core.key.toString('hex'),
+            isLocal: false,
+            active: writer.core.length > 0
+          };
+
+          if (includeMetadata) {
+            try {
+              // Safely get messages with error handling
+              let messages = [];
+              try {
+                const result = await this.base.view.find('@roombase/messages', {});
+                messages = Array.isArray(result) ? result : [];
+              } catch (err) {
+                console.error('Error fetching messages for metadata:', err);
+                messages = [];
+              }
+
+              const writerKey = writerInfo.key;
+              const senderMessages = writerKey ?
+                messages.filter(msg => msg && msg.sender === writerKey) : [];
+
+              const lastMessage = senderMessages.length > 0 ?
+                senderMessages.sort((a, b) => b.timestamp - a.timestamp)[0] : null;
+
+              writerInfo.lastActivity = lastMessage ? lastMessage.timestamp : null;
+              writerInfo.messagesCount = senderMessages.length;
+            } catch (err) {
+              console.error('Error processing message metadata:', err);
+              writerInfo.lastActivity = null;
+              writerInfo.messagesCount = 0;
+            }
+          }
+
+          writers.push(writerInfo);
         }
-
-        if (includeMetadata) {
-          // Get last update timestamp from writer's last message
-          const messages = await this.base.view.find('@roombase/messages', {})
-          const lastMessage = messages
-            .filter(msg => msg.sender === writerInfo.key)
-            .sort((a, b) => b.timestamp - a.timestamp)[0]
-
-          writerInfo.lastActivity = lastMessage ? lastMessage.timestamp : null
-          writerInfo.messagesCount = messages.filter(msg => msg.sender === writerInfo.key).length
-        }
-
-        writers.push(writerInfo)
       }
     }
 
-    return writers
-  }
-
-  /**
-   * Get users who are currently typing in this room
-   *
-   * @param {Object} opts - Query options
-   * @param {number} opts.recentSeconds - Consider typing events within this many seconds (default: 5)
-   * @param {boolean} opts.includeTimestamps - Include typing start timestamps
-   * @returns {Array|Object} - Array of user IDs or object with typing details
-   */
+    return writers;
+  }  /**
+  * Get users who are currently typing in this room
+  *
+  * @param {Object} opts - Query options
+  * @param {number} opts.recentSeconds - Consider typing events within this many seconds (default: 5)
+  * @param {boolean} opts.includeTimestamps - Include typing start timestamps
+  * @returns {Array|Object} - Array of user IDs or object with typing details
+  */
   async getTypingUsers(opts = {}) {
     const { recentSeconds = 5, includeTimestamps = false } = opts
     const allTyping = await this.base.view.find('@roombase/typing', { roomId: this.roomId })
@@ -682,4 +686,4 @@ class RoomBase extends ReadyResource {
 
 function noop() { }
 
-module.exports = RoomBase
+export default RoomBase

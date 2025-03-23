@@ -1,11 +1,10 @@
-// components/Chat/MessageList.js - Updated with better text handling
+// components/Chat/MessageList.js - Updated to use RoomBaseChatContext
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { useChat } from '../../contexts/ChatContext.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
-import { useP2PRoom } from '../../contexts/P2PRoomContext.js';
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
@@ -75,7 +74,6 @@ const prepareMessageLines = (text, maxWidth) => {
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const { activeRoom, inputMode } = useChat();
-  const { identity } = useP2PRoom();
   const [scrollOffset, setScrollOffset] = useState(0);
   const messages = activeRoom?.messages || [];
 
@@ -126,7 +124,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
           messageId,
           lineIndex: lineIdx,
           hasAttachment: message.content && message.content.startsWith('📎'),
-          isFileMessage: message.content && message.content.startsWith('📎')
+          isFileMessage: message.content && message.content.startsWith('📎'),
+          system: message.system
         });
       });
 
@@ -202,6 +201,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
         <Text bold wrap="truncate">
           Messages {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
         </Text>
+        <Text>
+          {JSON.stringify(messages)}</Text>
       </Box>
 
       {!messages || messages.length === 0 ? (
@@ -228,7 +229,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
                     {/* Username with fixed max width */}
                     <Box width={Math.min(20, contentWidth / 2)}>
                       <Text
-                        color={line.user === identity?.username ? primaryColor : secondaryColor}
+                        color={line.user === 'System' ? mutedTextColor : (line.user.startsWith('User_') ? primaryColor : secondaryColor)}
                         bold
                         wrap="truncate"
                       >
@@ -278,8 +279,9 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
                     width={contentWidth}
                   >
                     <Text
-                      color={line.isFileMessage ? secondaryColor : undefined}
+                      color={line.system ? mutedTextColor : (line.isFileMessage ? secondaryColor : undefined)}
                       wrap="truncate"
+                      italic={line.system}
                     >
                       {sanitizeTextForTerminal(line.text)}
                     </Text>

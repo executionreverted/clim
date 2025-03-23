@@ -1,7 +1,7 @@
 // components/Chat/RoomList.js - Updated with better text truncation
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { useChat } from '../../contexts/ChatContext.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';

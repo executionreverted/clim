@@ -1,7 +1,7 @@
-// components/Chat/ChatLayout.js - Updated to correctly reference peer data
+// components/Chat/ChatLayout.js - Updated to use RoomBaseChatContext
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
-import { useChat } from '../../contexts/ChatContext.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 import RoomList from './RoomList.js';
 import MessageList from './MessageList.js';
 import UserList from './UserList.js';

@@ -1,14 +1,12 @@
-// components/Chat/TopBar.js - Updated to use actual peer data from the swarm
+// components/Chat/TopBar.js - Updated to use RoomBaseContext
 import React from 'react';
 import { Box, Text } from 'ink';
-import { useChat } from '../../contexts/ChatContext.js';
-import { useP2PRoom } from '../../contexts/P2PRoomContext.js';
 import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 
 const TopBar = ({ width = 100 }) => {
-  const { activeRoom, focusedPanel, activeRoomId } = useChat();
-  const { peers, roomConnections } = useP2PRoom();
+  const { activeRoom, focusedPanel, activeRoomId, peers, connections } = useChat();
   const currentTheme = useThemeUpdate();
   const {
     primaryColor,
@@ -22,8 +20,8 @@ const TopBar = ({ width = 100 }) => {
   const peerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
 
   // Get the number of identified (non-anonymous) peers
-  const identifiedPeers = activeRoomId
-    ? (roomConnections[activeRoomId] || []).filter(p => !p.anonymous).length
+  const identifiedPeers = activeRoomId && connections?.[activeRoomId]
+    ? connections[activeRoomId].filter(p => !p.anonymous).length
     : 0;
 
   // Get key binding descriptions
@@ -34,7 +32,7 @@ const TopBar = ({ width = 100 }) => {
   const getStatusText = () => {
     if (!activeRoom) return 'No room selected';
 
-    if (activeRoom.status === 'error') return 'Connection error';
+    if (activeRoom.status === 'error') return JSON.stringify(activeRoom.error);
     if (activeRoom.status === 'connecting') return 'Connecting...';
 
     if (peerCount > 0) {

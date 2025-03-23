@@ -1,10 +1,11 @@
-// components/Chat/index.js
+// components/Chat/index.js - Updated to use RoomBaseChatContext
 import React, { memo, useState, useEffect } from 'react';
 import { Box, useStdout } from 'ink';
-import { ChatProvider, useChat } from '../../contexts/ChatContext.js';
+import { RoomBaseChatProvider } from '../../contexts/RoomBaseChatContext.js';
 import ChatLayout from './ChatLayout.js';
 import FileExplorer from '../FileExplorer/index.js';
 import useKeymap from '../../hooks/useKeymap.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 
 // Inner component that can access the chat context
 const ChatContent = memo(({ width, height }) => {
@@ -59,13 +60,14 @@ const Chat = ({ onBack }) => {
   }, [stdout]);
 
   return (
-    <ChatProvider onBack={onBack}>
+    <RoomBaseChatProvider onBack={onBack}>
       <ChatContent
         width={terminalWidth}
         height={terminalHeight}
       />
-    </ChatProvider>
+    </RoomBaseChatProvider>
   );
 };
+
 
 export default Chat;

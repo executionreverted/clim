@@ -1,8 +1,8 @@
-// components/Chat/InputBar.js - Fixed to prevent double submissions
+// components/Chat/InputBar.js - Updated to use RoomBaseChatContext
 import React, { useState, useRef, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import TextInput from '../TextInput.js';
-import { useChat } from '../../contexts/ChatContext.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 import { getBindingDescription, getBindingsForContext } from '../../utils/keymap.js';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
@@ -22,7 +22,7 @@ const InputBar = ({ width = 100, isFocused = false }) => {
     mutedTextColor,
     borderColor,
     activeBorderColor,
-  } = useThemeUpdate().colors
+  } = useThemeUpdate().colors;
   // Track submission state to prevent double submissions
   const isSubmittingRef = useRef(false);
 

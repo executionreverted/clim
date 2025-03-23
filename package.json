@@ -5,7 +5,7 @@
 	"bin": "dist/cli.js",
 	"type": "module",
 	"engines": {
-		"node": ">=16"
+		"node": ">=20"
 	},
 	"scripts": {
 		"build": "babel --out-dir=dist source",
@@ -18,7 +18,11 @@
 		"dist"
 	],
 	"dependencies": {
+		"autobase": "^7.1.0",
+		"b4a": "^1.6.7",
+		"blind-pairing": "^2.3.1",
 		"clipboardy": "^4.0.0",
+		"corestore": "^7.0.23",
 		"filesize": "^10.1.6",
 		"hypercore": "^11.0.48",
 		"hyperdb": "^4.9.4",
@@ -34,7 +38,9 @@
 		"mime-types": "^2.1.35",
 		"open": "^10.1.0",
 		"react": "^18.2.0",
-		"string-width": "^7.2.0"
+		"ready-resource": "^1.1.2",
+		"string-width": "^7.2.0",
+		"z32": "^1.1.0"
 	},
 	"devDependencies": {
 		"@babel/cli": "^7.21.0",

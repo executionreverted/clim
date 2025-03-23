@@ -1,9 +1,8 @@
-// components/Chat/UserList.js - With stability to prevent empty lists during updates
+// components/Chat/UserList.js - Updated to use RoomBaseContext
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
-import { useChat } from '../../contexts/ChatContext.js';
-import { useP2PRoom } from '../../contexts/P2PRoomContext.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import { useChat } from '../../contexts/RoomBaseChatContext.js';
 
 // Memoized peer item to prevent unnecessary rerenders
 const PeerItem = memo(({ peer, isFocused, colors }) => {
@@ -16,7 +15,7 @@ const PeerItem = memo(({ peer, isFocused, colors }) => {
         bold={peer.isYou}
         wrap="truncate"
       >
-        {isFocused ? '•' : ' '} {peer.name}
+        {isFocused ? '•' : ' '} {peer.username}
         {peer.isYou && ' (you)'}
       </Text>
     </Box>
@@ -24,7 +23,7 @@ const PeerItem = memo(({ peer, isFocused, colors }) => {
 }, (prevProps, nextProps) => {
   // Only rerender if these props change
   return (
-    prevProps.peer.name === nextProps.peer.name &&
+    prevProps.peer.username === nextProps.peer.username &&
     prevProps.peer.isYou === nextProps.peer.isYou &&
     prevProps.peer.anonymous === nextProps.peer.anonymous &&
     prevProps.isFocused === nextProps.isFocused
@@ -32,8 +31,7 @@ const PeerItem = memo(({ peer, isFocused, colors }) => {
 });
 
 const UserList = ({ width = 20, height = 20, isFocused = false }) => {
-  const { activeRoomId } = useChat();
-  const { identity, peers, roomConnections } = useP2PRoom();
+  const { activeRoomId, connections, peers, identity } = useChat();
   const currentTheme = useThemeUpdate();
 
   // Theme colors for styling
@@ -55,7 +53,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
 
   // Get the raw data from context
   const rawPeerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
-  const rawConnections = roomConnections[activeRoomId] || [];
+  const rawConnections = activeRoomId ? (connections?.[activeRoomId] || []) : [];
 
   // Update the stable list only after a debounce period
   useEffect(() => {
@@ -74,7 +72,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
         newUserList.push({
           id: identity.publicKey,
           stableKey: 'you',
-          name: identity.username,
+          username: identity.username,
           isYou: true
         });
       }
@@ -88,7 +86,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
         newUserList.push({
           id: connection.id || connection.publicKey || stableKey,
           stableKey: stableKey,
-          name: connection.username || 'Anonymous Peer',
+          username: connection.username || 'Anonymous Peer',
           isYou: false,
           publicKey: connection.publicKey,
           lastSeen: connection.lastSeen,

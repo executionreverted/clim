@@ -9,7 +9,8 @@ import useKeymap from './hooks/useKeymap.js';
 import { createExampleConfig } from './utils/keymap.js';
 import { ThemeProvider } from './contexts/ThemeContext.js';
 import { createThemeSystem } from './utils/theme.js';
-import { P2PRoomProvider } from './contexts/P2PRoomContext.js';
+import { RoomBaseProvider } from './contexts/RoomBaseContext.js';
+
 // Main App component
 const App = () => {
   const [currentPage, setCurrentPage] = useState('welcome');
@@ -57,7 +58,7 @@ const App = () => {
   return (
     <ThemeProvider>
 
-      <P2PRoomProvider>
+      <RoomBaseProvider>
         <Box
           flexDirection="column"
           width={terminalWidth}
@@ -83,7 +84,7 @@ const App = () => {
             <Options onBack={() => setCurrentPage('welcome')} />
           )}
         </Box>
-      </P2PRoomProvider>
+      </RoomBaseProvider>
     </ThemeProvider>
   );
 };
