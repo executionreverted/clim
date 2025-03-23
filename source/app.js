@@ -32,7 +32,7 @@ const App = () => {
   // Add welcome screen handlers
   const welcomeHandlers = {
     startChat: () => setCurrentPage('chat'),
-    startExplorer: () => setCurrentPage('explorer'),
+    //  startExplorer: () => setCurrentPage('explorer'),
     startOptions: () => setCurrentPage('options')
   };
 

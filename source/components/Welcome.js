@@ -10,7 +10,7 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
   // Define handlers for welcome screen actions
   const handlers = {
     startChat: () => onStart('chat'),
-    startExplorer: () => onStart('explorer'),
+    // startExplorer: () => onStart('explorer'),
     startOptions: () => onStart('options'),
     exit: () => process.exit(0),
   };
@@ -51,9 +51,9 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
         <Text>A simple terminal app with configurable keymaps</Text>
       </Box>
 
-      <Box marginY={2} padding={1} borderStyle="round" borderColor="green">
+      <Box flexDirection={"column"} marginY={2} padding={1} borderStyle="round" borderColor="green">
         <Text>Press <Text color="green" bold>{chatKey}</Text> to start p2p chat</Text>
-        <Text>Press <Text color="green" bold>{explorerKey}</Text> to start exploring files</Text>
+        {/* <Text>Press <Text color="green" bold>{explorerKey}</Text> to start exploring files</Text> */}
         <Text>Press <Text color="green" bold>{optionsKey}</Text> to open options</Text>
         <Text>Press <Text color="green" bold>{exitKey}</Text> to exit</Text>
       </Box>
