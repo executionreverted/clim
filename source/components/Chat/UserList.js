@@ -98,7 +98,9 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
       setStableUserList(newUserList);
       setStablePeerCount(rawPeerCount);
       lastUpdateTimeRef.current = Date.now();
-    }, [rawConnections, rawPeerCount, identity]);
+    }
+  }, [rawConnections, rawPeerCount, identity]);
+
 
   // Calculate how many max peers we can show based on available height
   // Accounting for header (2 lines) and footer (2 lines)
