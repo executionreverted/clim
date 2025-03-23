@@ -1,4 +1,4 @@
-// components/Welcome.js
+// components/Welcome.js - Fixed gradient text rendering
 import React from 'react';
 import { Box, Text } from 'ink';
 import Gradient from 'ink-gradient';
@@ -24,6 +24,10 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
   const optionsKey = getBindingDescription(contextBindings.startOptions);
   const exitKey = getBindingDescription(contextBindings.exit);
 
+  // Calculate appropriate text width based on terminal width
+  const textWidth = Math.min(width - 4, 80);  // Limit max width to 80 chars
+  const titleText = "Termin4LHub";
+
   return (
     <Box
       flexDirection="column"
@@ -36,9 +40,12 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
       {/* Center the content vertically in the available space */}
       <Box flexGrow={1} />
 
-      <Gradient name="rainbow">
-        <BigText text="Termin4LHub" align="center" font="block" />
-      </Gradient>
+      {/* Ensure gradient text has enough width */}
+      <Box width={textWidth}>
+        <Gradient name="rainbow">
+          <BigText text={titleText} font="shade" align="center" space={false} />
+        </Gradient>
+      </Box>
 
       <Box marginY={1}>
         <Text>A simple terminal app with configurable keymaps</Text>
