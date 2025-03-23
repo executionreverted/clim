@@ -1,4 +1,5 @@
-// components/Chat/MessageList.js
+// Fixed MessageList.js to properly handle loading more messages
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
@@ -77,7 +78,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
-  const scrollPositionRef = useRef(0);
+  const loadingAttemptRef = useRef(0);
   const previousMessagesCountRef = useRef(0);
 
   const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
@@ -98,6 +99,14 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       setHasMoreMessages(messages.length < totalMessageCount);
     }
   }, [messages.length, totalMessageCount, activeRoomId]);
+
+  // Reset loading state when active room changes
+  useEffect(() => {
+    loadingAttemptRef.current = 0;
+    setIsLoadingMore(false);
+    setHasMoreMessages(true);
+    previousMessagesCountRef.current = 0;
+  }, [activeRoomId]);
 
   // Keep track of messages count to detect new messages
   useEffect(() => {
@@ -174,17 +183,35 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const handleLoadMore = async () => {
     if (isLoadingMore || !activeRoomId || !hasMoreMessages) return;
 
+    loadingAttemptRef.current += 1;
     setIsLoadingMore(true);
 
     try {
-      const moreAvailable = await loadMoreMessages(activeRoomId, { limit: 20 });
+      // Load a larger batch each time to efficiently reach older messages
+      const batchSize = Math.min(20 * loadingAttemptRef.current, 50);
+
+      const moreAvailable = await loadMoreMessages(activeRoomId, {
+        limit: batchSize,
+        // Add explicit timestamp check to ensure we get older messages
+        lt: messages.length > 0 ? {
+          timestamp: Math.min(...messages.map(m => m.timestamp || Number.MAX_SAFE_INTEGER))
+        } : undefined
+      });
 
       // Update hasMoreMessages based on returned value
       setHasMoreMessages(moreAvailable);
+
+      // If we have all messages but count doesn't match, try one more time with a different approach
+      if (!moreAvailable && messages.length < totalMessageCount && loadingAttemptRef.current < 3) {
+        setTimeout(() => {
+          setIsLoadingMore(false);
+          setHasMoreMessages(true);
+        }, 500);
+      }
     } catch (err) {
       console.error("Error loading more messages:", err);
     } finally {
-      setIsLoadingMore(false)
+      setIsLoadingMore(false);
     }
   };
 
@@ -242,6 +269,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const visibleStartIndex = Math.max(0, totalLines - availableHeight - scrollOffset);
   const visibleEndIndex = Math.min(totalLines, visibleStartIndex + availableHeight);
   const visibleLines = processedLines.slice(visibleStartIndex, visibleEndIndex);
+
+  // Add automatic loading of more messages when we reach the top
+  useEffect(() => {
+    if (scrollOffset >= maxScrollOffset && hasMoreMessages && !isLoadingMore && messages.length < totalMessageCount) {
+      handleLoadMore();
+    }
+  }, [scrollOffset, maxScrollOffset, hasMoreMessages, isLoadingMore, messages.length, totalMessageCount]);
 
   return (
     <Box

@@ -647,7 +647,7 @@ export function RoomBaseProvider({ children }) {
     const room = roomInstances.current.get(roomId);
     if (!room) return false;
 
-    const { limit = 1, showLoading = true } = options;
+    const { limit = 20, showLoading = true } = options;
 
     try {
       // Get current room from state
@@ -670,23 +670,23 @@ export function RoomBaseProvider({ children }) {
       }
 
       // Find oldest message to use as starting point
-      let oldestTimestamp = Infinity;
+      let oldestMessage = null;
 
       for (const msg of currentMessages) {
-        if (msg.timestamp && msg.timestamp < oldestTimestamp) {
-          oldestTimestamp = msg.timestamp;
+        if (!oldestMessage || (msg.timestamp && msg.timestamp < oldestMessage.timestamp)) {
+          oldestMessage = msg;
         }
       }
 
       // Construct query options
       const queryOptions = {
         limit: limit,
-        reverse: true // Newest first in the resulting array
+        reverse: false // Oldest first for this query (we want older messages)
       };
 
       // If we have messages already, use oldest as upper bound
-      if (oldestTimestamp !== Infinity) {
-        queryOptions.lt = { timestamp: oldestTimestamp };
+      if (oldestMessage && oldestMessage.timestamp) {
+        queryOptions.lt = { timestamp: oldestMessage.timestamp };
       }
 
       // Get older messages
@@ -718,9 +718,16 @@ export function RoomBaseProvider({ children }) {
         return false;
       }
 
+      // Add console logging to debug message IDs
+      console.log(`Current message IDs: ${currentMessages.map(m => m.id).join(', ')}`);
+      console.log(`Retrieved ${olderMessages.length} older messages`);
+      console.log(`Older message IDs: ${olderMessages.map(m => m.id).join(', ')}`);
+
       // Filter out any messages that might be duplicates (by ID)
       const currentMessageIds = new Set(currentMessages.map(msg => msg.id));
       const uniqueOlderMessages = olderMessages.filter(msg => !currentMessageIds.has(msg.id));
+
+      console.log(`After filtering: ${uniqueOlderMessages.length} unique older messages`);
 
       if (uniqueOlderMessages.length === 0) {
         return false; // No new unique messages found
@@ -739,16 +746,14 @@ export function RoomBaseProvider({ children }) {
         }
       });
 
-      // Check if we have all messages now
-      const hasMoreMessages = combinedMessages.length < totalMessageCount;
-
-      return hasMoreMessages;
+      // Always return true if we added messages successfully
+      // This will ensure the component knows more messages might be available
+      return uniqueOlderMessages.length >= limit;
     } catch (err) {
       console.error(`Error loading more messages:`, err);
       return false;
     }
-  };
-  // Function to send a message
+  };  // Function to send a message
   const sendMessage = async (roomId, content, isSystemMessage = false) => {
     if (!content || content.trim() === '' || !state.identity) return false;
 
