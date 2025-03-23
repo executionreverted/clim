@@ -209,13 +209,8 @@ class RoomBase extends ReadyResource {
 
         // Log the entire message to see its structure
         // Check using any reliable way to identify our own messages
-        const sourceKey = node.from?.key?.toString('hex')
-        const localKey = this.base.local.key.toString('hex')
-
         // Only emit for messages from other writers
-        if (message && message?.content && sourceKey && sourceKey !== localKey) {
-          this.emit('new-message', message)
-        }
+        this.emit('new-message', message)
       } catch (err) {
         console.error('Error decoding node:', err)
       }
