@@ -1,8 +1,7 @@
-const Hyperschema = require('hyperschema')
-const HyperdbBuilder = require('hyperdb/builder')
-const Hyperdispatch = require('hyperdispatch')
+import Hyperschema from 'hyperschema'
+import HyperdbBuilder from 'hyperdb/builder'
+import Hyperdispatch from 'hyperdispatch'
 
-// SCHEMA CREATION START //
 const roombase = Hyperschema.from('./spec/schema')
 const template = roombase.namespace('roombase')
 
@@ -80,11 +79,11 @@ template.register({
     required: true
   }, {
     name: 'system',
-    type: 'boolean',
+    type: 'bool',
     required: false
   }, {
     name: 'received',
-    type: 'boolean',
+    type: 'bool',
     required: false
   }]
 })
@@ -103,7 +102,7 @@ template.register({
     required: true
   }, {
     name: 'isTyping',
-    type: 'boolean',
+    type: 'bool',
     required: true
   }, {
     name: 'timestamp',
@@ -186,3 +185,6 @@ namespace.register({
 })
 
 Hyperdispatch.toDisk(hyperdispatch)
+
+
+console.log('Generated')
