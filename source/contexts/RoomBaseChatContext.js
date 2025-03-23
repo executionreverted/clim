@@ -90,7 +90,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     peers,
     createInviteCode,
     updateProfile,
-    roomConnections
+    roomConnections,
+    error
   } = useRoomBase();
 
   // Reference to last message for auto-scrolling
@@ -311,6 +312,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     setShowFileExplorer,
     handleFileSelect,
     onBack,
+    error,
 
     // Additional from RoomBase
     peers,

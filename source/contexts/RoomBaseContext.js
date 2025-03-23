@@ -6,6 +6,7 @@ import os from 'os';
 import { createHash, randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
+import { inspect } from 'util';
 
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
@@ -203,7 +204,30 @@ export function RoomBaseProvider({ children }) {
     };
   }, []);
 
-  // Initialize room instances from stored keys
+
+  const setupMessageListener = (room, roomId) => {
+    if (!room) return;
+
+    // Listen for new messages
+    room.on('new-message', (message) => {
+      dispatch({
+        type: ACTIONS.ADD_MESSAGE,
+        payload: { roomId, message }
+      });
+    });
+
+    room.on('mistake', (message) => {
+      dispatch({
+        type: ACTIONS.SET_ERROR,
+        payload: JSON.stringify(message)
+      });
+    });
+  };
+
+
+
+
+
   const initializeRooms = async (roomKeys) => {
     const roomsWithMessages = [];
 
@@ -231,8 +255,65 @@ export function RoomBaseProvider({ children }) {
         // Set up message listener
         setupMessageListener(room, roomKey.id);
 
-        // Get initial messages
-        const { messages } = await room.getMessages({ limit: 100 });
+        // Get messages using IndexStream properly
+        let messages = [];
+        try {
+          const messagesStream = await room.getMessages();
+
+          // Check if it's a regular array
+          if (Array.isArray(messagesStream)) {
+            messages = messagesStream;
+          }
+          // Otherwise handle as a stream
+          else {
+            // Process stream using a callback approach
+            messages = await new Promise((resolve, reject) => {
+              const results = [];
+
+              // Try handling as a Node.js stream with event handlers
+              if (typeof messagesStream.on === 'function') {
+                messagesStream.on('data', (data) => {
+                  // Extract message data correctly
+                  if (data && typeof data === 'object') {
+                    const messageData = data.value !== undefined ? data.value : data;
+                    results.push(messageData);
+                  }
+                });
+
+                messagesStream.on('error', (err) => {
+                  console.error(`Stream error: ${err.message}`);
+                  reject(err);
+                });
+
+                messagesStream.on('end', () => {
+                  resolve(results);
+                });
+              }
+              // If it doesn't have stream methods, try as a collection with forEach
+              else if (typeof messagesStream.forEach === 'function') {
+                messagesStream.forEach(item => {
+                  results.push(item);
+                });
+                resolve(results);
+              }
+              // Last resort - try to convert to array if possible
+              else {
+                try {
+                  const arrayData = Array.from(messagesStream);
+                  resolve(arrayData);
+                } catch (err) {
+                  console.error(`Cannot convert to array: ${err.message}`);
+                  resolve([]);
+                }
+              }
+            });
+          }
+
+        } catch (msgErr) {
+          console.error(`Error retrieving messages for room ${roomKey.id}:`, msgErr);
+          messages = [];
+        }
+
         // Add room to state
         roomsWithMessages.push({
           id: roomKey.id,
@@ -263,47 +344,7 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
-  // Set up message listener for a room
-  const setupMessageListener = (room, roomId) => {
-    if (!room) return;
 
-    // Listen for new messages
-    room.on('new-message', (message) => {
-      console.log(`New message received for room ${roomId}:`, message);
-
-      dispatch({
-        type: ACTIONS.ADD_MESSAGE,
-        payload: { roomId, message }
-      });
-    });
-
-    // Initial message load
-    room.getMessages({ limit: 100 })
-      .then(result => {
-        const messages = result.messages || [];
-        console.log(`Loaded ${messages.length} messages for room ${roomId}`);
-
-        // If we have messages, add them to the room
-        if (messages.length > 0) {
-          // Update room in state with these messages
-          const roomIndex = state.rooms.findIndex(r => r.id === roomId);
-          if (roomIndex >= 0) {
-            const updatedRoom = {
-              ...state.rooms[roomIndex],
-              messages
-            };
-
-            dispatch({
-              type: ACTIONS.UPDATE_ROOM,
-              payload: updatedRoom
-            });
-          }
-        }
-      })
-      .catch(err => {
-        console.error(`Error loading messages for room ${roomId}:`, err);
-      });
-  };
 
   // Update peer information for a room
   const updatePeerInfo = async (roomId) => {
@@ -450,21 +491,18 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
-        console.log(`Joining room with invite: ${inviteCode}`);
 
         // It's an invite code, pair with the room
         const pair = RoomBase.pair(store, inviteCode);
 
         // Wait for pairing to complete
         const room = await pair.finished();
-        console.log(`Successfully paired with room`);
 
         // Only now store the corestore after successful pairing
         corestores.current.set(roomId, store);
 
         // Get room info
         const roomInfo = await room.getRoomInfo();
-        console.log(`Room info:`, roomInfo);
 
         const roomName = roomInfo?.name || 'Joined Room';
 
@@ -479,7 +517,6 @@ export function RoomBaseProvider({ children }) {
         try {
           const messagesResult = await room.getMessages({ limit: 100 });
           messages = messagesResult?.messages || [];
-          console.log(`Retrieved ${messages.length} messages`);
         } catch (msgErr) {
           console.error('Failed to retrieve messages:', msgErr);
           // Continue with empty messages array
@@ -499,7 +536,6 @@ export function RoomBaseProvider({ children }) {
         dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
 
-        console.log(`Room added to state with ID: ${roomId}`);
 
         // Force an update of peer info after a delay
         setTimeout(() => {
@@ -522,7 +558,6 @@ export function RoomBaseProvider({ children }) {
       if (store && roomId && !corestores.current.has(roomId)) {
         try {
           await store.close();
-          console.log('Cleaned up corestore after join failure');
         } catch (closeErr) {
           console.error('Error closing corestore:', closeErr);
         }
@@ -592,7 +627,6 @@ export function RoomBaseProvider({ children }) {
 
       // Send through RoomBase
       await room.sendMessage(message);
-      await room.flush();
       // Add to state (this will likely be duplicated by the message listener,
       // but ensuring immediate feedback is worth it)
 

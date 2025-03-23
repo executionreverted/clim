@@ -75,8 +75,8 @@ const prepareMessageLines = (text, maxWidth) => {
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const { activeRoom, inputMode } = useChat();
   const [scrollOffset, setScrollOffset] = useState(0);
-  const messages = activeRoom?.messages || [];
 
+  const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
   const currentTheme = useThemeUpdate();
   const {
     primaryColor,

@@ -6,7 +6,7 @@ import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
 
 const TopBar = ({ width = 100 }) => {
-  const { activeRoom, focusedPanel, activeRoomId, peers, connections } = useChat();
+  const { error, activeRoom, focusedPanel, activeRoomId, peers, connections } = useChat();
   const currentTheme = useThemeUpdate();
   const {
     primaryColor,
@@ -69,6 +69,8 @@ const TopBar = ({ width = 100 }) => {
         <Text bold color={successColor}>
           {activeRoom ? activeRoom.name : 'P2P Chat'}
           <Text color={getStatusColor()}> - {getStatusText()}</Text>
+          <Text>
+            {error}</Text>
         </Text>
       </Box>
 

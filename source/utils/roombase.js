@@ -10,6 +10,8 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js'
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 
+import { inspect } from 'util' // or directly
+import fs from 'fs';
 /**
  * Class for initiating pairing with a RoomBase
  */
@@ -180,7 +182,6 @@ class RoomBase extends ReadyResource {
     this.base.on('update', () => {
       if (!this.base._interrupting) {
         this.emit('update')
-        this._processIncomingMessages()
       }
     })
   }
@@ -224,23 +225,6 @@ class RoomBase extends ReadyResource {
       this.roomId = existingRoom.id
       this.roomName = existingRoom.name
     }
-  }
-
-  _processIncomingMessages() {
-    this.getNewMessages().then(messages => {
-      if (messages.length > 0) {
-        this.emit('new-messages', messages)
-
-        // Notify each listener
-        for (const listener of this.messageListeners) {
-          try {
-            listener(messages)
-          } catch (err) {
-            console.error('Error in message listener:', err)
-          }
-        }
-      }
-    }).catch(noop)
   }
 
   get writerKey() {
@@ -343,33 +327,19 @@ class RoomBase extends ReadyResource {
 
     try {
       // Use the dispatch function from hyperdispatch for proper message encoding
-      const { dispatch } = require('./spec/hyperdispatch');
 
       // Properly format message for the autobase
       const dispatchData = dispatch('@roombase/send-message', msg);
 
       // Append to autobase directly - this is critical for persistence
       await this.base.append(dispatchData);
-
-      console.log(`Message ${msg.id} appended to autobase with dispatch`);
-
       // Emit event for real-time updates
       this.emit('new-message', msg);
 
       return msg.id;
     } catch (err) {
       console.error(`Error saving message with dispatch:`, err);
-
-      // Fall back to direct view insertion as last resort
-      try {
-        await this.base.view.insert('@roombase/messages', msg);
-        console.log(`Message ${msg.id} inserted directly to view (fallback)`);
-        this.emit('new-message', msg);
-        return msg.id;
-      } catch (innerErr) {
-        console.error(`All message saving methods failed:`, innerErr);
-        throw new Error(`Failed to persist message: ${err.message}`);
-      }
+      this.emit('mistake', JSON.stringify(err.message))
     }
   }
 
@@ -413,84 +383,9 @@ class RoomBase extends ReadyResource {
    */
   async getMessages(opts = {}) {
     if (!this.base || !this.base.view) {
-      throw new Error("error initializing corestore")
+      throw new Error("Error initializing corestore");
     }
-
-    try {
-      // Direct query to view
-      const messages$ = await this.base.view.find('@roombase/messages', {});
-      const messages = messages$.value
-      if (!Array.isArray(messages)) {
-        console.warn('Messages not returned as array:', messages);
-        return { messages: [] };
-      }
-
-      // Sort messages by timestamp
-      const sortedMessages = [...messages].sort((a, b) =>
-        (opts.reverse === false) ? (a.timestamp - b.timestamp) : (b.timestamp - a.timestamp)
-      );
-
-      // Apply any filters from opts
-      const filteredMessages = sortedMessages.slice(0, opts.limit || sortedMessages.length);
-
-      console.log(`Retrieved ${filteredMessages.length} messages`);
-
-      return {
-        messages: filteredMessages,
-        pagination: {
-          hasMore: messages.length > filteredMessages.length
-        }
-      };
-    } catch (err) {
-      console.error('Error retrieving messages:', err);
-      return { messages: [] };
-    }
-  }
-  /**
-   * Get messages since a specific timestamp or last read message
-   *
-   * @param {number|string} since - Timestamp or message ID to get messages after
-   * @param {Object} opts - Additional options
-   * @param {number} opts.limit - Maximum number of messages to return
-   * @param {boolean} opts.onlyUnread - Only return messages not marked as received
-   * @returns {Array} - Array of new messages
-   */
-  async getNewMessages(since = 0, opts = {}) {
-    const { limit = 100, onlyUnread = true } = opts
-
-    // Retrieve messages based on what 'since' is
-    const allMessages = await this.base.view.find('@roombase/messages', {})
-
-    let filteredMessages
-
-    if (typeof since === 'string') {
-      // If 'since' is a string, assume it's a message ID
-      const sinceIndex = allMessages.findIndex(msg => msg.id === since)
-      if (sinceIndex >= 0) {
-        // Get all messages after the specified ID
-        filteredMessages = allMessages.slice(sinceIndex + 1)
-      } else {
-        filteredMessages = allMessages
-      }
-    } else {
-      // If 'since' is a number, assume it's a timestamp
-      filteredMessages = allMessages.filter(msg => msg.timestamp > since)
-    }
-
-    // Further filter by received status if needed
-    if (onlyUnread) {
-      filteredMessages = filteredMessages.filter(msg => !msg.received)
-    }
-
-    // Sort by timestamp (oldest first)
-    filteredMessages.sort((a, b) => a.timestamp - b.timestamp)
-
-    // Apply limit if specified
-    if (limit && filteredMessages.length > limit) {
-      filteredMessages = filteredMessages.slice(0, limit)
-    }
-
-    return filteredMessages
+    return await this.base.view.find('@roombase/messages', {});
   }
 
   /**
