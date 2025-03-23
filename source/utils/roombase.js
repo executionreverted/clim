@@ -393,7 +393,7 @@ class RoomBase extends ReadyResource {
       }
 
       // Emit event for real-time updates
-      this.emit('new-message', msg);
+      // this.emit('new-message', msg);
 
       return msg.id;
     } catch (err) {
