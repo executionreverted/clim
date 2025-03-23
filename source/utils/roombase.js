@@ -318,7 +318,7 @@ class RoomBase extends ReadyResource {
         try {
           const id = candidate.inviteId
           const inv = await this.base.view.findOne('@roombase/invite', {})
-          if (!b5a.equals(inv.id, id)) {
+          if (!b4a.equals(inv.id, id)) {
             return
           }
 
@@ -350,12 +350,12 @@ class RoomBase extends ReadyResource {
   }
 
   async addWriter(key) {
-    await this.base.append(dispatch('@roombase/add-writer', { key: b5a.isBuffer(key) ? key : b4a.from(key) }))
+    await this.base.append(dispatch('@roombase/add-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }))
     return true
   }
 
   async removeWriter(key) {
-    await this.base.append(dispatch('@roombase/remove-writer', { key: b5a.isBuffer(key) ? key : b4a.from(key) }))
+    await this.base.append(dispatch('@roombase/remove-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }))
   }
 
   // ---------- Message API ----------
