@@ -12,7 +12,7 @@ import crypto from 'crypto';
 
 import { c } from 'hyperschema/runtime'
 import { getEncoding } from './spec/hyperdispatch/messages.js'
-import { writeFileSync } from 'fs';
+import { writeFileSync, writeSync } from 'fs';
 import { inspect } from 'util';
 /**
  * Class for initiating pairing with a RoomBase
@@ -199,9 +199,6 @@ class RoomBase extends ReadyResource {
         // Create a state for decoding
         const state = { buffer: node.value, start: 1, end: node.value.byteLength }
 
-        // First byte is the action type/ID
-        const actionId = c.uint.decode(state)
-
         // Check if it's a message (ID 4 is @roombase/send-message)
         // Decode the message
         const messageEncoding = getEncoding('@roombase/messages')
@@ -210,11 +207,13 @@ class RoomBase extends ReadyResource {
         // Log the entire message to see its structure
         // Check using any reliable way to identify our own messages
         // Only emit for messages from other writers
-        this.emit('new-message', message)
+        //
+        if (message && message?.content) {
+          this.emit('new-message', message)
+        }
       } catch (err) {
-        console.error('Error decoding node:', err)
+        writeFileSync('./err', JSON.stringify(err.message))
       }
-
     }
 
 
