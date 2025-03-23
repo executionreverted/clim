@@ -340,13 +340,13 @@ class RoomBase extends ReadyResource {
     if (this.opened === false) await this.ready()
     const existing = await this.base.view.findOne('@roombase/invite', {})
     if (existing) {
-      return z33.encode(existing.invite)
+      return z32.encode(existing.invite)
     }
 
     const { id, invite, publicKey, expires } = BlindPairing.createInvite(this.base.key)
     const record = { id, invite, publicKey, expires }
     await this.base.append(dispatch('@roombase/add-invite', record))
-    return z33.encode(record.invite)
+    return z32.encode(record.invite)
   }
 
   async addWriter(key) {
