@@ -201,8 +201,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
         <Text bold wrap="truncate">
           Messages {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
         </Text>
-        <Text>
-          {JSON.stringify(messages)}</Text>
+
       </Box>
 
       {!messages || messages.length === 0 ? (

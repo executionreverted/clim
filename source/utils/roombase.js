@@ -10,8 +10,10 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js'
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 
-import { inspect } from 'util' // or directly
-import fs from 'fs';
+import { c } from 'hyperschema/runtime'
+import { getEncoding } from './spec/hyperdispatch/messages.js'
+import { writeFileSync } from 'fs';
+import { inspect } from 'util';
 /**
  * Class for initiating pairing with a RoomBase
  */
@@ -189,7 +191,36 @@ class RoomBase extends ReadyResource {
   async _apply(nodes, view, base) {
     for (const node of nodes) {
       await this.router.dispatch(node.value, { view, base })
+      try {
+        // Create a state for decoding
+        const state = { buffer: node.value, start: 0, end: node.value.byteLength }
+
+        // First byte is the action type/ID
+        const actionId = c.uint.decode(state)
+
+        // Check if it's a message (ID 3 is @roombase/send-message)
+        if (actionId === 3) {
+          // Decode the message
+          const messageEncoding = getEncoding('@roombase/messages')
+          const message = messageEncoding.decode(state)
+
+          // Log the entire message to see its structure
+          // Check using any reliable way to identify our own messages
+          const sourceKey = node.from?.key?.toString('hex')
+          const localKey = this.base.local.key.toString('hex')
+
+          // Only emit for messages from other writers
+          if (sourceKey && sourceKey !== localKey) {
+            this.emit('new-message', message)
+          }
+        }
+      } catch (err) {
+        console.error('Error decoding node:', err)
+      }
+
     }
+
+
     await view.flush()
   }
 

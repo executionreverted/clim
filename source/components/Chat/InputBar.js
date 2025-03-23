@@ -44,7 +44,6 @@ const InputBar = ({ width = 100, isFocused = false }) => {
   // Wrap handleInputSubmit to prevent double submissions
   const handleSubmit = useCallback((value) => {
     if (isSubmittingRef.current) {
-      console.log('Preventing duplicate submission');
       return;
     }
     isSubmittingRef.current = true;

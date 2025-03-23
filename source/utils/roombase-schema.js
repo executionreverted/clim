@@ -187,4 +187,3 @@ namespace.register({
 Hyperdispatch.toDisk(hyperdispatch)
 
 
-console.log('Generated')

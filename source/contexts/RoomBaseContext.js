@@ -6,7 +6,6 @@ import os from 'os';
 import { createHash, randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
-import { inspect } from 'util';
 
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
@@ -208,6 +207,13 @@ export function RoomBaseProvider({ children }) {
   const setupMessageListener = (room, roomId) => {
     if (!room) return;
 
+    room.on('update', async () => {
+      try {
+        updatePeerInfo(roomId);
+      } catch (err) {
+        console.error(`Error handling room update: ${err.message}`);
+      }
+    });
     // Listen for new messages
     room.on('new-message', (message) => {
       dispatch({

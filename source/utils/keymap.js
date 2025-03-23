@@ -255,7 +255,6 @@ export function createExampleConfig() {
     if (!fs.existsSync(CONFIG_PATH)) {
       // Create a simple example with some customized keys
       fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULT_KEYMAP, null, 2));
-      console.log(`Example configuration created at ${CONFIG_PATH}`);
     }
   } catch (error) {
     console.error(`Failed to create example config: ${error.message}`);

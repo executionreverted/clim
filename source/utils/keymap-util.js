@@ -54,7 +54,6 @@ const commands = {
     if (config) {
       try {
         fs.writeFileSync(outputPath, config);
-        console.log(`Keymap configuration generated at: ${outputPath}`);
       } catch (error) {
         console.error(`Error writing to ${outputPath}: ${error.message}`);
         process.exit(1);
@@ -71,7 +70,6 @@ const commands = {
       // Try to load current keymap
       if (!fs.existsSync(CONFIG_PATH)) {
         console.error(`Configuration file not found at: ${CONFIG_PATH}`);
-        console.log('Run "hyper-keymap generate" to create a new configuration');
         process.exit(1);
       }
 
@@ -88,7 +86,6 @@ const commands = {
       const validation = validateKeymap(keymap);
 
       if (validation.valid) {
-        console.log('Keymap configuration is valid ✓');
       } else {
         console.error('Keymap configuration is invalid:');
         validation.errors.forEach(error => {
@@ -106,17 +103,11 @@ const commands = {
   show: (context) => {
     if (!context) {
       // Show all available contexts
-      console.log('Available contexts:');
       Object.keys(DEFAULT_KEYMAP).forEach(ctx => {
-        console.log(`- ${ctx}`);
       });
-      console.log('\nUse "hyper-keymap show <context>" to see key bindings for a specific context');
       return;
     }
 
-    const keymap = loadKeymap();
-    const output = showKeyBindings(context);
-    console.log(output);
   },
 
   // Reset to default keymap
@@ -124,14 +115,11 @@ const commands = {
     if (fs.existsSync(CONFIG_PATH)) {
       try {
         fs.unlinkSync(CONFIG_PATH);
-        console.log(`Removed custom keymap configuration: ${CONFIG_PATH}`);
-        console.log('Default keymap will be used on next application start');
       } catch (error) {
         console.error(`Error removing keymap configuration: ${error.message}`);
         process.exit(1);
       }
     } else {
-      console.log(`No custom keymap configuration found at: ${CONFIG_PATH}`);
     }
   }
 };
