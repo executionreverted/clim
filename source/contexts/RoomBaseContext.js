@@ -27,7 +27,8 @@ const ACTIONS = {
   SET_IDENTITY: 'SET_IDENTITY',
   SET_PEERS: 'SET_PEERS',
   SET_CONNECTIONS: 'SET_CONNECTIONS',
-  UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES'
+  UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES',
+  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT' // New action type
 };
 
 // Initial state
@@ -37,7 +38,8 @@ const initialState = {
   identity: null,
   error: null,
   peers: {}, // roomId -> count
-  connections: {} // roomId -> array of connections
+  connections: {}, // roomId -> array of connections
+  messageCounts: {} // roomId -> total message count
 };
 
 // Reducer function
@@ -111,6 +113,15 @@ function reducer(state, action) {
             ? { ...room, messages: action.payload.messages }
             : room
         )
+      };
+
+    case ACTIONS.UPDATE_MESSAGE_COUNT:
+      return {
+        ...state,
+        messageCounts: {
+          ...state.messageCounts,
+          [action.payload.roomId]: action.payload.count
+        }
       };
     default:
       return state;
@@ -269,7 +280,11 @@ export function RoomBaseProvider({ children }) {
 
         // Set up message listener
         setupMessageListener(room, roomKey.id);
-
+        try {
+          await updateMessageCount(roomKey.id)
+        } catch (countErr) {
+          console.error(`Error getting message count for room ${roomKey.id}:`, countErr);
+        }
         // Get messages using IndexStream properly
         let messages = [];
         try {
@@ -345,7 +360,20 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
+  const updateMessageCount = async (roomId) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room) return;
 
+    try {
+      const count = await room.getMessageCount();
+      dispatch({
+        type: ACTIONS.UPDATE_MESSAGE_COUNT,
+        payload: { roomId, count }
+      });
+    } catch (err) {
+      console.error(`Error getting message count for room ${roomId}:`, err);
+    }
+  };
 
   // Update peer information for a room
   const updatePeerInfo = async (roomId) => {
@@ -613,40 +641,65 @@ export function RoomBaseProvider({ children }) {
   // Simpler version of the loadMoreMessages function
   // Add this debugging version of loadMoreMessages to RoomBaseContext.js
 
-  // In RoomBaseContext.js
-
-  const loadMoreMessages = async (roomId) => {
+  const loadMoreMessages = async (roomId, options = {}) => {
     if (!roomId) return false;
 
     const room = roomInstances.current.get(roomId);
     if (!room) return false;
+
+    const { limit = 1, showLoading = true } = options;
 
     try {
       // Get current room from state
       const currentRoom = state.rooms.find(r => r.id === roomId);
       if (!currentRoom) return false;
 
-      // Get current messages
+      // Get current messages and count
       const currentMessages = currentRoom.messages || [];
+      const totalMessageCount = await room.getMessageCount();
 
-      // Find oldest message to use as starting point
-      const oldestTimestamp = currentMessages.length > 0
-        ? Math.min(...currentMessages.map(msg => msg.timestamp || Infinity))
-        : Infinity;
-
-      // Get older messages
-      const olderMessagesStream = room.getMessages({
-        limit: 1,
-        lt: oldestTimestamp !== Infinity ? { timestamp: oldestTimestamp } : undefined,
-        reverse: true
+      // Update the message count in state
+      dispatch({
+        type: ACTIONS.UPDATE_MESSAGE_COUNT,
+        payload: { roomId, count: totalMessageCount }
       });
 
-      // Process stream
+      // If we already have all messages, don't fetch more
+      if (currentMessages.length >= totalMessageCount) {
+        return false;
+      }
+
+      // Find oldest message to use as starting point
+      let oldestTimestamp = Infinity;
+
+      for (const msg of currentMessages) {
+        if (msg.timestamp && msg.timestamp < oldestTimestamp) {
+          oldestTimestamp = msg.timestamp;
+        }
+      }
+
+      // Construct query options
+      const queryOptions = {
+        limit: limit,
+        reverse: true // Newest first in the resulting array
+      };
+
+      // If we have messages already, use oldest as upper bound
+      if (oldestTimestamp !== Infinity) {
+        queryOptions.lt = { timestamp: oldestTimestamp };
+      }
+
+      // Get older messages
+      const olderMessagesStream = room.getMessages(queryOptions);
+
+      // Process stream results
       let olderMessages = [];
 
       if (olderMessagesStream.then) {
+        // It's a promise that resolves to an array
         olderMessages = await olderMessagesStream;
       } else if (olderMessagesStream.on) {
+        // It's a Node.js stream
         olderMessages = await new Promise(resolve => {
           const results = [];
           olderMessagesStream.on('data', msg => results.push(msg));
@@ -654,29 +707,47 @@ export function RoomBaseProvider({ children }) {
           olderMessagesStream.on('error', () => resolve([]));
         });
       } else if (Array.isArray(olderMessagesStream)) {
+        // It's already an array
         olderMessages = olderMessagesStream;
       }
 
       // If no older messages found
-      if (olderMessages.length === 0) return false;
+      if (!olderMessages || olderMessages.length === 0) {
+        // Double-check our count - maybe it's wrong?
+        await updateMessageCount(roomId);
+        return false;
+      }
+
+      // Filter out any messages that might be duplicates (by ID)
+      const currentMessageIds = new Set(currentMessages.map(msg => msg.id));
+      const uniqueOlderMessages = olderMessages.filter(msg => !currentMessageIds.has(msg.id));
+
+      if (uniqueOlderMessages.length === 0) {
+        return false; // No new unique messages found
+      }
+
+      // Combine messages, keeping them sorted by timestamp
+      const combinedMessages = [...uniqueOlderMessages, ...currentMessages]
+        .sort((a, b) => a.timestamp - b.timestamp);
 
       // Update room with combined messages
       dispatch({
         type: ACTIONS.UPDATE_ROOM_MESSAGES,
         payload: {
           roomId,
-          messages: [...olderMessages, ...currentMessages]
+          messages: combinedMessages
         }
       });
 
-      return true;
+      // Check if we have all messages now
+      const hasMoreMessages = combinedMessages.length < totalMessageCount;
+
+      return hasMoreMessages;
     } catch (err) {
       console.error(`Error loading more messages:`, err);
       return false;
     }
   };
-
-
   // Function to send a message
   const sendMessage = async (roomId, content, isSystemMessage = false) => {
     if (!content || content.trim() === '' || !state.identity) return false;
@@ -786,6 +857,7 @@ export function RoomBaseProvider({ children }) {
     updateProfile,
     getConnections,
     loadMoreMessages,
+    messageCounts: state.messageCounts,
   };
 
   return (

@@ -92,7 +92,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     updateProfile,
     roomConnections,
     error,
-    loadMoreMessages
+    loadMoreMessages,
+    messageCounts
   } = useRoomBase();
 
   // Reference to last message for auto-scrolling
@@ -315,6 +316,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     loadMoreMessages,
     onBack,
     error,
+    messageCounts,
 
     // Additional from RoomBase
     peers,

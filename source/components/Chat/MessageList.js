@@ -66,7 +66,14 @@ const prepareMessageLines = (text, maxWidth) => {
 };
 
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
-  const { activeRoom, activeRoomId, inputMode, loadMoreMessages } = useChat();
+  const {
+    activeRoom,
+    activeRoomId,
+    inputMode,
+    loadMoreMessages,
+    messageCounts,
+  } = useChat();
+
   const [scrollOffset, setScrollOffset] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
@@ -74,6 +81,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const previousMessagesCountRef = useRef(0);
 
   const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
+  const totalMessageCount = messageCounts?.[activeRoomId] ? messageCounts[activeRoomId] : 0;
+
   const currentTheme = useThemeUpdate();
   const {
     primaryColor,
@@ -82,6 +91,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
     borderColor,
     activeBorderColor,
   } = currentTheme.colors;
+
+  // Update hasMoreMessages when messages or total count changes
+  useEffect(() => {
+    if (activeRoomId && messages.length > 0) {
+      setHasMoreMessages(messages.length < totalMessageCount);
+    }
+  }, [messages.length, totalMessageCount, activeRoomId]);
 
   // Keep track of messages count to detect new messages
   useEffect(() => {
@@ -156,22 +172,19 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
 
   // Load more messages when scrolled to top
   const handleLoadMore = async () => {
-    if (isLoadingMore || !activeRoomId) return;
+    if (isLoadingMore || !activeRoomId || !hasMoreMessages) return;
 
     setIsLoadingMore(true);
 
     try {
-      const result = await loadMoreMessages(activeRoomId);
+      const moreAvailable = await loadMoreMessages(activeRoomId, { limit: 20 });
 
-      // Only set to false when we get an empty result
-      if (result === false) {
-        console.log("No more messages available");
-        setHasMoreMessages(false);
-      }
+      // Update hasMoreMessages based on returned value
+      setHasMoreMessages(moreAvailable);
     } catch (err) {
       console.error("Error loading more messages:", err);
     } finally {
-      setIsLoadingMore(false);
+      setIsLoadingMore(false)
     }
   };
 
@@ -241,7 +254,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
     >
       <Box marginBottom={1}>
         <Text bold wrap="truncate">
-          Messages {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
+          Messages({totalMessageCount}) {scrollOffset > 0 ? `(scrolled ${scrollOffset} lines)` : ''}
+          {totalMessageCount > 0 && ` ${messages.length}/${totalMessageCount}`}
           {isLoadingMore ? ' (Loading...)' : ''}
         </Text>
       </Box>
@@ -352,6 +366,12 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       {scrollOffset > 0 && (
         <Box position="absolute" right={2} top={1}>
           <Text color={secondaryColor} bold>↑{scrollOffset}</Text>
+        </Box>
+      )}
+
+      {hasMoreMessages && scrollOffset >= maxScrollOffset && (
+        <Box position="absolute" left={2} top={1}>
+          <Text color={secondaryColor} bold>• More history available</Text>
         </Box>
       )}
 

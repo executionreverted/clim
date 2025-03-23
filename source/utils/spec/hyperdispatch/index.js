@@ -2,8 +2,10 @@
 /* eslint-disable camelcase */
 
 import { version, getEncoding, setVersion } from './messages.js'
+
 import pkg from 'hyperdispatch/runtime.js';
 const { c, b4a, assert } = pkg;
+
 const defaultVersion = version
 
 class Router {
@@ -35,7 +37,7 @@ class Router {
       case '@roombase/delete-message':
         this._handler4 = handler
         break
-      case '@roombase/typing-status':
+      case '@roombase/set-metadata':
         this._handler5 = handler
         break
       default:
@@ -50,7 +52,7 @@ class Router {
     assert(this._handler2 !== null, 'Missing handler for "@roombase/add-invite"')
     assert(this._handler3 !== null, 'Missing handler for "@roombase/send-message"')
     assert(this._handler4 !== null, 'Missing handler for "@roombase/delete-message"')
-    assert(this._handler5 !== null, 'Missing handler for "@roombase/typing-status"')
+    assert(this._handler5 !== null, 'Missing handler for "@roombase/set-metadata"')
   }
 
   async dispatch(encoded, context) {
@@ -125,7 +127,7 @@ const route4 = {
 
 const route5 = {
   id: 5,
-  enc: getEncoding('@roombase/typing')
+  enc: getEncoding('@roombase/metadata')
 }
 
 function getEncoderAndId(name) {
@@ -140,7 +142,7 @@ function getEncoderAndId(name) {
       return route3
     case '@roombase/delete-message':
       return route4
-    case '@roombase/typing-status':
+    case '@roombase/set-metadata':
       return route5
     default:
       throw new Error('Handler not found for name: ' + name)

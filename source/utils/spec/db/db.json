@@ -29,12 +29,12 @@
       "trigger": null
     },
     {
-      "name": "rooms",
+      "name": "metadata",
       "namespace": "roombase",
       "id": 2,
       "type": 1,
       "indexes": [],
-      "schema": "@roombase/rooms",
+      "schema": "@roombase/metadata",
       "derived": false,
       "key": [
         "id"
@@ -51,20 +51,6 @@
       "derived": false,
       "key": [
         "id"
-      ],
-      "trigger": null
-    },
-    {
-      "name": "typing",
-      "namespace": "roombase",
-      "id": 4,
-      "type": 1,
-      "indexes": [],
-      "schema": "@roombase/typing",
-      "derived": false,
-      "key": [
-        "userId",
-        "roomId"
       ],
       "trigger": null
     }

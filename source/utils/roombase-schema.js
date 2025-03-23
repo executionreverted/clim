@@ -40,7 +40,7 @@ template.register({
 
 // Room schema - simple structure focusing on room metadata
 template.register({
-  name: 'rooms',
+  name: 'metadata',
   compact: false,
   fields: [{
     name: 'id',
@@ -54,7 +54,13 @@ template.register({
     name: 'createdAt',
     type: 'int',
     required: true
-  }]
+  },
+  {
+    name: 'messageCount',  // Add this field
+    type: 'int',
+    required: false
+  }
+  ]
 })
 
 // Message schema - matches application's message structure exactly
@@ -88,28 +94,6 @@ template.register({
   }]
 })
 
-// Typing status schema
-template.register({
-  name: 'typing',
-  compact: false,
-  fields: [{
-    name: 'userId',
-    type: 'string',
-    required: true
-  }, {
-    name: 'roomId',
-    type: 'string',
-    required: true
-  }, {
-    name: 'isTyping',
-    type: 'bool',
-    required: true
-  }, {
-    name: 'timestamp',
-    type: 'int',
-    required: true
-  }]
-})
 
 Hyperschema.toDisk(roombase)
 
@@ -130,8 +114,8 @@ collections.collections.register({
 })
 
 collections.collections.register({
-  name: 'rooms',
-  schema: '@roombase/rooms',
+  name: 'metadata',
+  schema: '@roombase/metadata',
   key: ['id']
 })
 
@@ -141,11 +125,7 @@ collections.collections.register({
   key: ['id']
 })
 
-collections.collections.register({
-  name: 'typing',
-  schema: '@roombase/typing',
-  key: ['userId', 'roomId']
-})
+
 
 HyperdbBuilder.toDisk(dbTemplate)
 
@@ -180,8 +160,8 @@ namespace.register({
 })
 
 namespace.register({
-  name: 'typing-status',
-  requestType: '@roombase/typing'
+  name: 'set-metadata',
+  requestType: '@roombase/metadata'
 })
 
 Hyperdispatch.toDisk(hyperdispatch)

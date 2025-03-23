@@ -114,7 +114,7 @@ const collection1 = {
   indexes: []
 }
 
-// '@roombase/rooms' collection key
+// '@roombase/metadata' collection key
 const collection2_key = new IndexEncoder([
   IndexEncoder.STRING
 ], { prefix: 2 })
@@ -124,10 +124,10 @@ function collection2_indexify (record) {
   return a === undefined ? [] : [a]
 }
 
-// '@roombase/rooms' value encoding
-const collection2_enc = getEncoding('@roombase/rooms/hyperdb#2')
+// '@roombase/metadata' value encoding
+const collection2_enc = getEncoding('@roombase/metadata/hyperdb#2')
 
-// '@roombase/rooms' reconstruction function
+// '@roombase/metadata' reconstruction function
 function collection2_reconstruct (version, keyBuf, valueBuf) {
   const key = collection2_key.decode(keyBuf)
   setVersion(version)
@@ -135,7 +135,7 @@ function collection2_reconstruct (version, keyBuf, valueBuf) {
   record.id = key[0]
   return record
 }
-// '@roombase/rooms' key reconstruction function
+// '@roombase/metadata' key reconstruction function
 function collection2_reconstruct_key (keyBuf) {
   const key = collection2_key.decode(keyBuf)
   return {
@@ -143,9 +143,9 @@ function collection2_reconstruct_key (keyBuf) {
   }
 }
 
-// '@roombase/rooms'
+// '@roombase/metadata'
 const collection2 = {
-  name: '@roombase/rooms',
+  name: '@roombase/metadata',
   id: 2,
   encodeKey (record) {
     const key = [record.id]
@@ -224,79 +224,11 @@ const collection3 = {
   indexes: []
 }
 
-// '@roombase/typing' collection key
-const collection4_key = new IndexEncoder([
-  IndexEncoder.STRING,
-  IndexEncoder.STRING
-], { prefix: 4 })
-
-function collection4_indexify (record) {
-  const arr = []
-
-  const a0 = record.userId
-  if (a0 === undefined) return arr
-  arr.push(a0)
-
-  const a1 = record.roomId
-  if (a1 === undefined) return arr
-  arr.push(a1)
-
-  return arr
-}
-
-// '@roombase/typing' value encoding
-const collection4_enc = getEncoding('@roombase/typing/hyperdb#4')
-
-// '@roombase/typing' reconstruction function
-function collection4_reconstruct (version, keyBuf, valueBuf) {
-  const key = collection4_key.decode(keyBuf)
-  setVersion(version)
-  const record = c.decode(collection4_enc, valueBuf)
-  record.userId = key[0]
-  record.roomId = key[1]
-  return record
-}
-// '@roombase/typing' key reconstruction function
-function collection4_reconstruct_key (keyBuf) {
-  const key = collection4_key.decode(keyBuf)
-  return {
-    userId: key[0],
-    roomId: key[1]
-  }
-}
-
-// '@roombase/typing'
-const collection4 = {
-  name: '@roombase/typing',
-  id: 4,
-  encodeKey (record) {
-    const key = [record.userId, record.roomId]
-    return collection4_key.encode(key)
-  },
-  encodeKeyRange ({ gt, lt, gte, lte } = {}) {
-    return collection4_key.encodeRange({
-      gt: gt ? collection4_indexify(gt) : null,
-      lt: lt ? collection4_indexify(lt) : null,
-      gte: gte ? collection4_indexify(gte) : null,
-      lte: lte ? collection4_indexify(lte) : null
-    })
-  },
-  encodeValue (version, record) {
-    setVersion(version)
-    return c.encode(collection4_enc, record)
-  },
-  trigger: null,
-  reconstruct: collection4_reconstruct,
-  reconstructKey: collection4_reconstruct_key,
-  indexes: []
-}
-
 const collections = [
   collection0,
   collection1,
   collection2,
-  collection3,
-  collection4
+  collection3
 ]
 
 const indexes = [
@@ -308,9 +240,8 @@ function resolveCollection (name) {
   switch (name) {
     case '@roombase/writer': return collection0
     case '@roombase/invite': return collection1
-    case '@roombase/rooms': return collection2
+    case '@roombase/metadata': return collection2
     case '@roombase/messages': return collection3
-    case '@roombase/typing': return collection4
     default: return null
   }
 }

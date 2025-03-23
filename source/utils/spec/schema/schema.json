@@ -48,10 +48,10 @@
       ]
     },
     {
-      "name": "rooms",
+      "name": "metadata",
       "namespace": "roombase",
       "compact": false,
-      "flagsPosition": -1,
+      "flagsPosition": 3,
       "fields": [
         {
           "name": "id",
@@ -68,6 +68,12 @@
         {
           "name": "createdAt",
           "required": true,
+          "type": "int",
+          "version": 1
+        },
+        {
+          "name": "messageCount",
+          "required": false,
           "type": "int",
           "version": 1
         }
@@ -113,38 +119,6 @@
           "name": "received",
           "required": false,
           "type": "bool",
-          "version": 1
-        }
-      ]
-    },
-    {
-      "name": "typing",
-      "namespace": "roombase",
-      "compact": false,
-      "flagsPosition": 2,
-      "fields": [
-        {
-          "name": "userId",
-          "required": true,
-          "type": "string",
-          "version": 1
-        },
-        {
-          "name": "roomId",
-          "required": true,
-          "type": "string",
-          "version": 1
-        },
-        {
-          "name": "isTyping",
-          "required": false,
-          "type": "bool",
-          "version": 1
-        },
-        {
-          "name": "timestamp",
-          "required": true,
-          "type": "int",
           "version": 1
         }
       ]
