@@ -9,7 +9,7 @@ import clipboardy from 'clipboardy';
 import { randomBytes } from 'crypto';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + Math.ceil(Math.random() * 1000));
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'rooms.json');
 const USERS_FILE = path.join(CONFIG_DIR, 'users.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
