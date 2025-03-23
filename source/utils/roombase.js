@@ -203,7 +203,7 @@ class RoomBase extends ReadyResource {
         const actionId = c.uint.decode(state)
 
         // Check if it's a message (ID 4 is @roombase/send-message)
-        if (actionId === 4) {
+        if (actionId === 3) {
           // Decode the message
           const messageEncoding = getEncoding('@roombase/messages')
           const message = messageEncoding.decode(state)
