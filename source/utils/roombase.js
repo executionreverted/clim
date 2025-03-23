@@ -203,20 +203,18 @@ class RoomBase extends ReadyResource {
         const actionId = c.uint.decode(state)
 
         // Check if it's a message (ID 4 is @roombase/send-message)
-        if (actionId === 3) {
-          // Decode the message
-          const messageEncoding = getEncoding('@roombase/messages')
-          const message = messageEncoding.decode(state)
+        // Decode the message
+        const messageEncoding = getEncoding('@roombase/messages')
+        const message = messageEncoding.decode(state)
 
-          // Log the entire message to see its structure
-          // Check using any reliable way to identify our own messages
-          const sourceKey = node.from?.key?.toString('hex')
-          const localKey = this.base.local.key.toString('hex')
+        // Log the entire message to see its structure
+        // Check using any reliable way to identify our own messages
+        const sourceKey = node.from?.key?.toString('hex')
+        const localKey = this.base.local.key.toString('hex')
 
-          // Only emit for messages from other writers
-          if (sourceKey && sourceKey !== localKey) {
-            this.emit('new-message', message)
-          }
+        // Only emit for messages from other writers
+        if (message && message?.content && sourceKey && sourceKey !== localKey) {
+          this.emit('new-message', message)
         }
       } catch (err) {
         console.error('Error decoding node:', err)
