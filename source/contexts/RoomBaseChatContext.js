@@ -90,10 +90,10 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     peers,
     createInviteCode,
     updateProfile,
-    roomConnections,
     error,
     loadMoreMessages,
-    messageCounts
+    messageCounts,
+    connectedPeers
   } = useRoomBase();
 
   const {
@@ -314,10 +314,9 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     onBack,
     error,
     messageCounts,
-
+    connectedPeers,
     // Additional from RoomBase
     peers,
-    roomConnections
   };
 
   return (

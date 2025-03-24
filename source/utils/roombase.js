@@ -10,13 +10,13 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js'
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 
-import { c } from 'hyperschema/runtime'
 import { getEncoding } from './spec/hyperdispatch/messages.js'
 import { writeFileSync, writeSync } from 'fs';
-import { inspect } from 'util';
 /**
  * Class for initiating pairing with a RoomBase
  */
+
+export const ActivePeers = {}
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
     super()
@@ -41,6 +41,8 @@ class RoomBasePairer extends ReadyResource {
 
     const store = this.store
     this.swarm.on('connection', (connection, peerInfo) => {
+      ActivePeers[this.roomId] = this.swarm.connections.size
+      this.emit('peer-update', {})
       store.replicate(connection)
     })
 
@@ -355,7 +357,7 @@ class RoomBase extends ReadyResource {
 
   // ---------- Message API ----------
 
-  async sendMessage(message) {
+  async sendMessage(message, onlyclient = false) {
     // Make sure base is ready
     await this.base.ready();
 
@@ -367,6 +369,11 @@ class RoomBase extends ReadyResource {
       timestamp: message.timestamp || Date.now(),
       system: !!message.system
     };
+
+    if (onlyclient) {
+      this.emit('new-message', msg)
+      return;
+    }
 
     try {
       // Use the dispatch function from hyperdispatch for proper message encoding
@@ -430,6 +437,13 @@ class RoomBase extends ReadyResource {
       console.error('Error getting message count:', err);
       return 1;
     }
+  }
+
+  async getConnectedPeers() {
+    if (!this.base || !this.base.view) {
+      throw new Error("Error initializing corestore");
+    }
+    return await this.swarm.connections.size
   }
 
   /**

@@ -1,14 +1,14 @@
 // contexts/RoomBaseContext.js - Direct integration with RoomBase
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
-import fs from 'fs';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useState } from 'react';
+import fs, { writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + 2);
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
@@ -38,8 +38,8 @@ const initialState = {
   identity: null,
   error: null,
   peers: {}, // roomId -> count
-  connections: {}, // roomId -> array of connections
-  messageCounts: {} // roomId -> total message count
+  connections: {},
+  messageCounts: {},
 };
 
 // Reducer function
@@ -181,6 +181,7 @@ export function RoomBaseProvider({ children }) {
   const corestores = useRef(new Map()); // Map roomId -> Corestore instance
   const messageListeners = useRef(new Map()); // Map roomId -> function[] (for message event listeners)
   const joinInProgress = useRef(false)
+  const [connectedPeers, setConnectedPeers] = useState({})
   // Ensure config directory exists and load identity
   useEffect(() => {
     try {
@@ -227,10 +228,25 @@ export function RoomBaseProvider({ children }) {
   const setupMessageListener = (room, roomId) => {
     if (!room) return;
 
+    room.on('peer-update', async () => {
+      const pc = await room.getConnectedPeers()
+      setConnectedPeers(p => ({
+        ...p,
+        [roomId]: pc
+      }))
+
+      writeFileSync('/peerupdate', JSON.stringify(roomId + '_' + pc))
+    })
+
     room.on('update', async () => {
       try {
-        updatePeerInfo(roomId);
+        updatePeerInfo((roomId))
       } catch (err) {
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: JSON.stringify(err.message)
+        });
+
         console.error(`Error handling room update: ${err.message}`);
       }
     });
@@ -249,10 +265,6 @@ export function RoomBaseProvider({ children }) {
       });
     });
   };
-
-
-
-
 
   const initializeRooms = async (roomKeys) => {
     const roomsWithMessages = [];
@@ -386,7 +398,6 @@ export function RoomBaseProvider({ children }) {
     try {
       const writers = await room.getWriters({ includeMetadata: true });
       const peerCount = writers.length;
-
       // Update peer count
       dispatch({
         type: ACTIONS.SET_PEERS,
@@ -505,7 +516,7 @@ export function RoomBaseProvider({ children }) {
 
     try {
       // Check if it's already an existing room
-      const existingRoom = state.rooms.find(r => r.name === inviteCode);
+      const existingRoom = state.rooms.find(r => r.inviteCode === inviteCode);
       if (existingRoom) {
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: existingRoom.id });
         return existingRoom.id;
@@ -564,7 +575,8 @@ export function RoomBaseProvider({ children }) {
           key: room.key?.toString('hex'),
           encryptionKey: room.encryptionKey?.toString('hex'),
           messages: messages,
-          status: 'connected'
+          status: 'connected',
+          inviteCode
         };
 
         // Update state in a single batch to prevent race conditions
@@ -572,14 +584,8 @@ export function RoomBaseProvider({ children }) {
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
 
 
+        updatePeerInfo(roomId);
         // Force an update of peer info after a delay
-        setTimeout(() => {
-          try {
-            updatePeerInfo(roomId);
-          } catch (peerErr) {
-            console.error('Error updating peer info:', peerErr);
-          }
-        }, 1000);
         joinInProgress.current = false
         return roomId;
       } else {
@@ -597,7 +603,7 @@ export function RoomBaseProvider({ children }) {
           console.error('Error closing corestore:', closeErr);
         }
       }
-
+      writeFileSync('./join', JSON.stringify(err.message))
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to join room: ${err.message}` });
       return null;
     }
@@ -773,15 +779,17 @@ export function RoomBaseProvider({ children }) {
       };
 
       // Send through RoomBase
-      await room.sendMessage(message);
+      await room.sendMessage(message, isSystemMessage);
+      if (!isSystemMessage) {
+        dispatch({
+          type: ACTIONS.ADD_MESSAGE,
+          payload: {
+            roomId: room.roomId,
+            message: message
+          }
+        })
+      }
 
-      dispatch({
-        type: ACTIONS.ADD_MESSAGE,
-        payload: {
-          roomId: room.roomId,
-          message: message
-        }
-      })
       // Add to state (this will likely be duplicated by the message listener,
       // but ensuring immediate feedback is worth it)
 
@@ -858,6 +866,7 @@ export function RoomBaseProvider({ children }) {
     rooms: state.rooms,
     activeRoom,
     activeRoomId: state.activeRoomId,
+    connectedPeers: connectedPeers?.[state?.activeRoomId] || 0,
     error: state.error,
     identity: state.identity,
     peers: state.peers,

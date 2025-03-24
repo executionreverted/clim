@@ -223,7 +223,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
     processedLinesRef.current = buildProcessedLines();
     // Force re-render to ensure the UI updates with new messages
     setForceRender(prev => prev + 1);
-  }, [messages, messages.length, contentWidth, activeRoomId]);
+  }, [messages.length, contentWidth, activeRoomId]);
 
   const totalLines = processedLinesRef.current.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
@@ -322,15 +322,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
 
   // This console.log helps debug render cycles without affecting performance much
   // It will show in the terminal when the component re-renders
-  React.useEffect(() => {
-  }, [forceRender, messages.length]);
 
   // Add automatic loading of more messages when we reach the top
   useEffect(() => {
     if (scrollOffset >= maxScrollOffset && hasMoreMessages && !isLoadingMore && messages.length < totalMessageCount) {
       handleLoadMore();
     }
-  }, [scrollOffset, maxScrollOffset, hasMoreMessages, isLoadingMore, messages.length, totalMessageCount]);
+  }, [maxScrollOffset, hasMoreMessages, isLoadingMore, messages.length, totalMessageCount]);
 
   return (
     <Box

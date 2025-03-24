@@ -3,7 +3,6 @@ import React, { memo, useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
-
 // Memoized peer item to prevent unnecessary rerenders
 const PeerItem = memo(({ peer, isFocused, colors }) => {
   const { secondaryColor, mutedTextColor, primaryColor } = colors;
@@ -31,7 +30,7 @@ const PeerItem = memo(({ peer, isFocused, colors }) => {
 });
 
 const UserList = ({ width = 20, height = 20, isFocused = false }) => {
-  const { activeRoomId, connections, peers, identity } = useChat();
+  const { activeRoomId, connections, peers, identity, connectedPeers } = useChat();
   const currentTheme = useThemeUpdate();
 
   // Theme colors for styling
@@ -131,7 +130,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
     >
       <Box>
         <Text bold underline wrap="truncate">
-          Connected Peers ({stablePeerCount})
+          Connected Peers ({connectedPeers || 35})
         </Text>
       </Box>
 
