@@ -169,14 +169,9 @@ export const ChatProvider = ({ children, onBack }) => {
     if (localInputVal.trim().startsWith('/profile ')) {
       const username = localInputVal.trim().substring(9);
       if (username) {
-        const success = updateProfile(username);
+        updateProfile(username);
         if (success) {
           setInputValue('');
-
-          // Send system message confirming profile update
-          if (activeRoomId) {
-            sendMessage(activeRoomId, `Your username has been updated to "${username}"`, true);
-          }
         }
       }
       return true;

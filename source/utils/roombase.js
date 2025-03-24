@@ -192,36 +192,39 @@ class RoomBase extends ReadyResource {
 
   async _apply(nodes, view, base) {
     for (const node of nodes) {
-      await this.router.dispatch(node.value, { view, base })
+      await this.router.dispatch(node.value, { view, base });
       try {
-        // Create a state for decoding
-        const state = { buffer: node.value, start: 1, end: node.value.byteLength }
+        // Skip this processing if the state is 1 byte or less
+        if (node.value.length <= 1) continue;
 
-        // Check if it's a message (ID 4 is @roombase/send-message)
-        // Decode the message
-        const messageEncoding = getEncoding('@roombase/messages')
-        const message = messageEncoding.decode(state)
+        // Create a state for decoding - IMPORTANT: Start at position 1 to skip the message type byte
+        const state = { buffer: node.value, start: 1, end: node.value.byteLength };
 
-        // Log the entire message to see its structure
-        // Check using any reliable way to identify our own messages
-        // Only emit for messages from other writers
-        //
-        // Important: Get the node source key for identification
-        const sourceKey = node.from?.key?.toString('hex');
-        const localKey = this.base.local.key.toString('hex');
+        // Get the message type - 1st byte in the hyperdispatch format
+        const messageType = node.value[0];
 
-        // Always emit the message event regardless of source
-        // This ensures messages from all sources (including self) are processed
-        if (sourceKey !== localKey) {
-          // Add source identification to the message
+        // Only process if it's a send-message command (ID 3)
+        if (messageType === 3) {
+          // Decode the message
+          const messageEncoding = getEncoding('@roombase/messages');
+          const message = messageEncoding.decode(state);
+
+          // Get the node source key for identification
+          const sourceKey = node.from?.key?.toString('hex');
+          const localKey = this.base.local.key.toString('hex');
+
+          // Only emit for messages from other writers - our own are handled separately
           this.emit('new-message', message);
         }
       } catch (err) {
+        // Log the error but don't block processing
+        console.error('Error processing message in _apply:', err);
       }
     }
 
-    await view.flush()
+    await view.flush();
   }
+
 
   async _open() {
     await this.base.ready()
@@ -370,11 +373,9 @@ class RoomBase extends ReadyResource {
 
     try {
       // Use the dispatch function from hyperdispatch for proper message encoding
-
-      // Properly format message for the autobase
       const dispatchData = dispatch('@roombase/send-message', msg);
 
-      // Append to autobase directly - this is critical for persistence
+      // Append to autobase directly
       await this.base.append(dispatchData);
 
       const room = await this.getRoomInfo();
@@ -382,24 +383,17 @@ class RoomBase extends ReadyResource {
         const currentCount = room.messageCount || 0;
         const newCount = currentCount + 1;
 
-
-        // Try direct modification with delete/insert instead of update
+        // Update room metadata with new message count
         try {
           const dispatchData = dispatch('@roombase/set-metadata', { ...room, messageCount: newCount });
-          await this.base.append(dispatchData)
-          // Verify it worked
+          await this.base.append(dispatchData);
         } catch (updateErr) {
-
           console.error("Error updating room count:", updateErr);
         }
       }
 
-      // Emit event for real-time updates
-      // this.emit('new-message', msg);
-
       return msg.id;
     } catch (err) {
-
       console.error(`Error saving message with dispatch:`, err);
       this.emit('mistake', JSON.stringify(err.message))
     }

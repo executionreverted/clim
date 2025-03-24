@@ -8,7 +8,7 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters' + 2);
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
@@ -181,6 +181,33 @@ export function RoomBaseProvider({ children }) {
   const corestores = useRef(new Map()); // Map roomId -> Corestore instance
   const messageListeners = useRef(new Map()); // Map roomId -> function[] (for message event listeners)
   const joinInProgress = useRef(false)
+  const seenMessageIds = useRef(new Map()); // Map roomId -> Set of seen message IDs
+  const isMessageDuplicate = (roomId, messageId) => {
+    if (!roomId || !messageId) return false;
+
+    // Get or create the set for this room
+    if (!seenMessageIds.current.has(roomId)) {
+      seenMessageIds.current.set(roomId, new Set());
+    }
+
+    const roomMessageIds = seenMessageIds.current.get(roomId);
+
+    // Check if message is a duplicate
+    if (roomMessageIds.has(messageId)) {
+      return true;
+    }
+
+    // Not a duplicate - add to seen messages
+    roomMessageIds.add(messageId);
+
+    // Limit set size (keep last 1000 message IDs)
+    if (roomMessageIds.size > 1000) {
+      const oldestId = roomMessageIds.values().next().value;
+      roomMessageIds.delete(oldestId);
+    }
+
+    return false;
+  };
   // Ensure config directory exists and load identity
   useEffect(() => {
     try {
@@ -236,6 +263,11 @@ export function RoomBaseProvider({ children }) {
     });
     // Listen for new messages
     room.on('new-message', (message) => {
+
+      if (!message || !message.id) return;
+      if (isMessageDuplicate(roomId, message.id)) {
+        return; // Skip this message since it's a duplicate
+      }
       dispatch({
         type: ACTIONS.ADD_MESSAGE,
         payload: { roomId, message }
@@ -789,16 +821,19 @@ export function RoomBaseProvider({ children }) {
         system: isSystemMessage
       };
 
+      if (isSystemMessage) {
+        dispatch({
+          type: ACTIONS.ADD_MESSAGE,
+          payload: {
+            roomId: room.roomId,
+            message: message,
+          }
+        })
+        return true
+      }
       // Send through RoomBase
       await room.sendMessage(message);
 
-      dispatch({
-        type: ACTIONS.ADD_MESSAGE,
-        payload: {
-          roomId: room.roomId,
-          message: message
-        }
-      })
       // Add to state (this will likely be duplicated by the message listener,
       // but ensuring immediate feedback is worth it)
 
