@@ -1,4 +1,4 @@
-// Fixed MessageList.js to properly handle loading more messages
+// Fixed MessageList.js to resolve duplicate key errors
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
@@ -80,6 +80,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const loadingAttemptRef = useRef(0);
   const previousMessagesCountRef = useRef(0);
+  const processedLinesRef = useRef([]); // Use a ref to hold processed lines to avoid recreating on each render
 
   const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
   const totalMessageCount = messageCounts?.[activeRoomId] ? messageCounts[activeRoomId] : 0;
@@ -130,53 +131,69 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const availableHeight = Math.max(5, height - 6); // Account for header and padding
 
   // Process messages into display lines
-  const processedLines = [];
+  // KEY FIX: We need to ensure each line has a unique identifier
+  // that remains stable across renders and isn't dependent on array position
+  const buildProcessedLines = () => {
+    const lines = [];
 
-  if (messages.length > 0) {
-    // Sort messages by timestamp
-    const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+    if (messages.length > 0) {
+      // Sort messages by timestamp
+      const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
-    sortedMessages.forEach((message, idx) => {
-      // Create a unique message ID if none exists
-      const messageId = message.id || `msg-${idx}`;
+      sortedMessages.forEach((message) => {
+        // Create a unique message ID if none exists
+        const messageId = message.id || `msg-${message.timestamp}-${message.sender}`;
 
-      // Calculate max username length to prevent overflow
-      const maxUsernameLength = Math.min(20, Math.floor(contentWidth / 3));
-      const displayName = (message.sender || 'Unknown').length > maxUsernameLength
-        ? (message.sender || 'Unknown').substring(0, maxUsernameLength - 2) + '..'
-        : (message.sender || 'Unknown');
+        // Calculate max username length to prevent overflow
+        const maxUsernameLength = Math.min(20, Math.floor(contentWidth / 3));
+        const displayName = (message.sender || 'Unknown').length > maxUsernameLength
+          ? (message.sender || 'Unknown').substring(0, maxUsernameLength - 2) + '..'
+          : (message.sender || 'Unknown');
 
-      // Add header line
-      processedLines.push({
-        type: 'header',
-        user: displayName,
-        timestamp: message.timestamp,
-        messageId
-      });
-
-      // Process message content into lines that fit within width
-      const contentLines = prepareMessageLines(message.content, contentWidth);
-      contentLines.forEach((line, lineIdx) => {
-        processedLines.push({
-          type: 'content',
-          text: line,
+        // Add header line with a truly unique key
+        lines.push({
+          type: 'header',
+          user: displayName,
+          timestamp: message.timestamp,
           messageId,
-          lineIndex: lineIdx,
-          hasAttachment: message.content && message.content.startsWith('📎'),
-          isFileMessage: message.content && message.content.startsWith('📎'),
-          system: message.system
+          // Create a stable unique key for this line
+          uniqueKey: `header-${messageId}`
+        });
+
+        // Process message content into lines that fit within width
+        const contentLines = prepareMessageLines(message.content, contentWidth);
+        contentLines.forEach((line, lineIdx) => {
+          lines.push({
+            type: 'content',
+            text: line,
+            messageId,
+            lineIndex: lineIdx,
+            hasAttachment: message.content && message.content.startsWith('📎'),
+            isFileMessage: message.content && message.content.startsWith('📎'),
+            system: message.system,
+            // Create a stable unique key for this line
+            uniqueKey: `content-${messageId}-${lineIdx}`
+          });
+        });
+
+        // Add a separator with a stable unique key
+        lines.push({
+          type: 'separator',
+          messageId,
+          uniqueKey: `separator-${messageId}`
         });
       });
+    }
 
-      // Add a separator between messages
-      processedLines.push({
-        type: 'separator',
-        messageId: `${messageId}-sep`
-      });
-    });
-  }
+    return lines;
+  };
 
-  const totalLines = processedLines.length;
+  // Update processed lines when messages change
+  useEffect(() => {
+    processedLinesRef.current = buildProcessedLines();
+  }, [messages, contentWidth, activeRoomId]);
+
+  const totalLines = processedLinesRef.current.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
   // Load more messages when scrolled to top
@@ -268,7 +285,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   // Get visible lines based on current scroll offset
   const visibleStartIndex = Math.max(0, totalLines - availableHeight - scrollOffset);
   const visibleEndIndex = Math.min(totalLines, visibleStartIndex + availableHeight);
-  const visibleLines = processedLines.slice(visibleStartIndex, visibleEndIndex);
+  const visibleLines = processedLinesRef.current.slice(visibleStartIndex, visibleEndIndex);
 
   // Add automatic loading of more messages when we reach the top
   useEffect(() => {
@@ -319,13 +336,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
             </Box>
           )}
 
-          {/* Message lines */}
+          {/* Message lines - KEY FIX: Use the unique stable key for each line */}
           <Box flexDirection="column">
-            {visibleLines.map((line, idx) => {
+            {visibleLines.map((line) => {
               if (line.type === 'header') {
                 return (
                   <Box
-                    key={`h-${line.messageId}-${idx}`}
+                    key={line.uniqueKey}
                     width={contentWidth}
                     flexDirection="row"
                   >
@@ -346,7 +363,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
               } else if (line.type === 'separator') {
                 return (
                   <Box
-                    key={`s-${line.messageId}`}
+                    key={line.uniqueKey}
                     width={contentWidth}
                     height={1}
                   />
@@ -356,7 +373,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
                 if (line.isFileMessage && line.lineIndex === 0) {
                   return (
                     <Box
-                      key={`c-${line.messageId}-${line.lineIndex}-${idx}`}
+                      key={line.uniqueKey}
                       width={contentWidth}
                       flexDirection="row"
                     >
@@ -378,7 +395,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
                 // Regular message line
                 return (
                   <Box
-                    key={`c-${line.messageId}-${line.lineIndex}-${idx}`}
+                    key={line.uniqueKey}
                     width={contentWidth}
                   >
                     <Text
