@@ -28,7 +28,8 @@ const ACTIONS = {
   SET_PEERS: 'SET_PEERS',
   SET_CONNECTIONS: 'SET_CONNECTIONS',
   UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES',
-  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT' // New action type
+  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT',
+  SET_LOADING: 'SET_LOADING'
 };
 
 // Initial state
@@ -40,6 +41,8 @@ const initialState = {
   peers: {}, // roomId -> count
   connections: {},
   messageCounts: {},
+  isLoading: false,
+  loadingMessage: "Working on it ..."
 };
 
 // Reducer function
@@ -123,6 +126,11 @@ function reducer(state, action) {
           [action.payload.roomId]: action.payload.count
         }
       };
+    case ACTIONS.SET_LOADING:
+      return {
+        ...state,
+        isLoading: action.payload.loading
+      }
     default:
       return state;
   }
@@ -234,8 +242,6 @@ export function RoomBaseProvider({ children }) {
         ...p,
         [roomId]: pc
       }))
-
-      writeFileSync('/peerupdate', JSON.stringify(roomId + '_' + pc))
     })
 
     room.on('update', async () => {
@@ -453,8 +459,9 @@ export function RoomBaseProvider({ children }) {
     if (!name || name.trim() === '') {
       return null;
     }
-
     try {
+
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: true } })
       const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const roomName = name.trim();
 
@@ -501,30 +508,41 @@ export function RoomBaseProvider({ children }) {
       return roomId;
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to create room: ${err.message}` });
+
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: false } })
       return null;
+    } finally {
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: false } })
     }
   };
 
   // Function to join a room by invite code
   // Function to join a room by invite code with better resource management
   const joinRoom = async (inviteCode) => {
-    if (joinInProgress.current) return;
+    if (joinInProgress.current) return null;
     if (!inviteCode) return null;
+
+
+    dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: true } })
 
     let store = null;
     let roomId = null;
+    let pair = null;
+    let room = null;
 
     try {
+      joinInProgress.current = true;
+
       // Check if it's already an existing room
       const existingRoom = state.rooms.find(r => r.inviteCode === inviteCode);
       if (existingRoom) {
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: existingRoom.id });
+        joinInProgress.current = false;
         return existingRoom.id;
       }
 
       // Determine if it's an invite code
       if (inviteCode) {
-        joinInProgress.current = true
         // Generate a unique room ID
         roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -536,66 +554,100 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
-
-        // It's an invite code, pair with the room
-        const pair = RoomBase.pair(store, inviteCode);
-
-        // Wait for pairing to complete
-        const room = await pair.finished();
-
-        // Only now store the corestore after successful pairing
-        corestores.current.set(roomId, store);
-
-        // Get room info
-        const roomInfo = await room.getRoomInfo();
-
-        const roomName = roomInfo?.name || 'Joined Room';
-
-        // Store the room instance
-        roomInstances.current.set(roomId, room);
-
-        // Setup listeners after the room is fully initialized
-        setupMessageListener(room, roomId);
-        initializeRooms()
-
-        // Get existing messages safely
-        let messages = [];
         try {
-          const messagesResult = await room.getMessages({ limit: 100 });
-          messages = messagesResult?.messages || [];
-        } catch (msgErr) {
-          console.error('Failed to retrieve messages:', msgErr);
-          // Continue with empty messages array
+          // It's an invite code, pair with the room
+          pair = RoomBase.pair(store, inviteCode);
+
+          // Wait for pairing to complete with timeout
+          room = await pair.finished()
+
+          await room.ready();
+
+          // Get room info with error handling
+          let roomInfo = null;
+          try {
+            roomInfo = await room.getRoomInfo();
+          } catch (infoErr) {
+            console.error('Error getting room info:', infoErr);
+            roomInfo = { name: 'Joined Room' };
+          }
+
+          const roomName = roomInfo?.name || 'Joined Room';
+
+          // Only now store resources after successful initialization
+          corestores.current.set(roomId, store);
+          roomInstances.current.set(roomId, room);
+
+          // Setup listeners after the room is fully initialized
+          setupMessageListener(room, roomId);
+
+          // Get existing messages safely
+          let messages = [];
+          try {
+            const messagesResult = await room.getMessages({ limit: 50 });
+            messages = messagesResult?.messages || [];
+          } catch (msgErr) {
+            console.error('Failed to retrieve messages:', msgErr);
+          }
+
+          // Add to state
+          const newRoom = {
+            id: roomId,
+            name: roomName,
+            key: room.key?.toString('hex'),
+            encryptionKey: room.encryptionKey?.toString('hex'),
+            messages: messages,
+            status: 'connected',
+            inviteCode
+          };
+
+          // Update state in a single batch
+          dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
+          dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
+
+          // Now initialize networked connections
+          try {
+            await updatePeerInfo(roomId);
+            // Only initialize rooms after everything else is ok
+            await initializeRooms();
+          } catch (networkErr) {
+            console.error("Network initialization error:", networkErr);
+            // Continue anyway - this shouldn't crash the app
+          }
+
+          return roomId;
+        } catch (pairErr) {
+          // Pairing-specific error handling
+          console.error('Pairing error:', pairErr);
+
+          // Clean up resources on pairing error
+          if (room) await room.close().catch(e => console.error("Error closing room:", e));
+          if (pair) await pair.close().catch(e => console.error("Error closing pair:", e));
+          if (store) await store.close().catch(e => console.error("Error closing store:", e));
+
+          // Delete the directory we created
+          try {
+            const roomStorePath = path.join(ROOMS_DIR, roomId);
+            fs.rmSync(roomStorePath, { recursive: true, force: true });
+          } catch (deleteErr) {
+            console.error('Error deleting room directory:', deleteErr);
+          }
+
+          throw pairErr; // Re-throw to be caught by the outer try-catch
         }
-
-        // Add to state
-        const newRoom = {
-          id: roomId,
-          name: roomName,
-          key: room.key?.toString('hex'),
-          encryptionKey: room.encryptionKey?.toString('hex'),
-          messages: messages,
-          status: 'connected',
-          inviteCode
-        };
-
-        // Update state in a single batch to prevent race conditions
-        dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
-        dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
-
-
-        updatePeerInfo(roomId);
-        // Force an update of peer info after a delay
-        joinInProgress.current = false
-        return roomId;
       } else {
         // It's a room name, create a new room
+        joinInProgress.current = false;
         return createRoom(inviteCode);
       }
     } catch (err) {
       console.error(`Error in joinRoom:`, err);
 
-      // Clean up resources on error
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: false } })
+      // Log detailed error info
+      writeFileSync('./join-error-stack.txt', err.stack || err.message);
+
+      // Clean up any dangling resources
       if (store && roomId && !corestores.current.has(roomId)) {
         try {
           await store.close();
@@ -603,12 +655,16 @@ export function RoomBaseProvider({ children }) {
           console.error('Error closing corestore:', closeErr);
         }
       }
-      writeFileSync('./join', JSON.stringify(err.message))
+
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to join room: ${err.message}` });
       return null;
+    } finally {
+
+      dispatch({ type: ACTIONS.SET_LOADING, payload: { loading: false } })
+      // Always clear the in-progress flag when done
+      joinInProgress.current = false;
     }
-  }
-  // Function to leave a room
+  }  // Function to leave a room
   const leaveRoom = async (roomId) => {
     try {
       const room = roomInstances.current.get(roomId);
@@ -871,7 +927,8 @@ export function RoomBaseProvider({ children }) {
     identity: state.identity,
     peers: state.peers,
     connections: state.connections,
-
+    isLoading: state.isLoading,
+    loadingMessage: state.loadingMessage,
     createRoom,
     joinRoom,
     leaveRoom,

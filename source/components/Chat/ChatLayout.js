@@ -1,4 +1,4 @@
-// components/Chat/ChatLayout.js - Updated to use RoomBaseChatContext
+// components/Chat/ChatLayout.js - Updated to show loading indicator
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
@@ -7,6 +7,7 @@ import MessageList from './MessageList.js';
 import UserList from './UserList.js';
 import InputBar from './InputBar.js';
 import TopBar from './TopBar.js';
+import Loading from '../Loading.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { getBindingDescription } from '../../utils/keymap.js';
 
@@ -20,7 +21,9 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     handleInputSubmit,
     onBack,
     setShowFileExplorer,
-    activeRoomId
+    activeRoomId,
+    isLoading,
+    loadingMessage
   } = useChat();
 
   // Calculate panel widths based on terminal size
@@ -100,6 +103,23 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const backKey = getBindingDescription(contextBindings.back);
   const shareFileKey = getBindingDescription(contextBindings.shareFile);
   const addRoomKey = getBindingDescription(contextBindings.addRoom);
+
+  // Show loading overlay if loading state is true
+  if (isLoading) {
+    return (
+      <Box
+        flexDirection="column"
+        width={width}
+        height={height}
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Box marginBottom={1}>
+          <Loading text={loadingMessage} width={width} />
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box

@@ -41,8 +41,6 @@ class RoomBasePairer extends ReadyResource {
 
     const store = this.store
     this.swarm.on('connection', (connection, peerInfo) => {
-      ActivePeers[this.roomId] = this.swarm.connections.size
-      this.emit('peer-update', {})
       store.replicate(connection)
     })
 
@@ -305,6 +303,8 @@ class RoomBase extends ReadyResource {
       })
       this.swarm.on('connection', (connection, peerInfo) => {
         this.store.replicate(connection)
+        ActivePeers[this.roomId] = this.swarm.connections.size
+        this.emit('peer-update', {})
       })
     }
 
@@ -371,7 +371,6 @@ class RoomBase extends ReadyResource {
     };
 
     if (onlyclient) {
-      this.emit('new-message', msg)
       return;
     }
 
@@ -400,10 +399,6 @@ class RoomBase extends ReadyResource {
           console.error("Error updating room count:", updateErr);
         }
       }
-
-      // Emit event for real-time updates
-      // this.emit('new-message', msg);
-
       return msg.id;
     } catch (err) {
 

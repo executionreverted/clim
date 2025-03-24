@@ -130,7 +130,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
     >
       <Box>
         <Text bold underline wrap="truncate">
-          Connected Peers ({connectedPeers || 35})
+          Connected Peers ({connectedPeers || 0})
         </Text>
       </Box>
 
