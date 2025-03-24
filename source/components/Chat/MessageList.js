@@ -323,9 +323,6 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   // This console.log helps debug render cycles without affecting performance much
   // It will show in the terminal when the component re-renders
   React.useEffect(() => {
-    if (forceRender > 1) {
-      console.debug(`MessageList re-render: ${messages.length} messages, force=${forceRender}`);
-    }
   }, [forceRender, messages.length]);
 
   // Add automatic loading of more messages when we reach the top
