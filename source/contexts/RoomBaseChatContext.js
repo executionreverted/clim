@@ -1,7 +1,7 @@
 // contexts/RoomBaseChatContext.js
 import clipboard from 'clipboardy';
-import React, { useRef, useEffect, createContext, useContext, useReducer, useCallback } from 'react';
-import { matchesKeyBinding, getBindingsForContext } from '../utils/keymap.js';
+import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import { getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
 
 // Define action types
@@ -95,9 +95,6 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     loadMoreMessages,
     messageCounts
   } = useRoomBase();
-
-  // Reference to last message for auto-scrolling
-  const lastMessageRef = useRef(null);
 
   const {
     inputValue,
