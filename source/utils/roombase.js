@@ -11,7 +11,7 @@ import db from './spec/db/index.js';
 import crypto from 'crypto';
 
 import { getEncoding } from './spec/hyperdispatch/messages.js'
-import { writeFileSync, writeSync } from 'fs';
+import { writeFileSync } from 'fs';
 /**
  * Class for initiating pairing with a RoomBase
  */
@@ -206,15 +206,17 @@ class RoomBase extends ReadyResource {
         // Check using any reliable way to identify our own messages
         // Only emit for messages from other writers
         //
-        const sourceKey = node.from?.key?.toString('hex')
-        const localKey = this.base.local.key.toString('hex')
+        // Important: Get the node source key for identification
+        const sourceKey = node.from?.key?.toString('hex');
+        const localKey = this.base.local.key.toString('hex');
 
-        // Only emit for messages from other writers
-        if (message?.content && sourceKey && sourceKey !== localKey) {
-          this.emit('new-message', message)
+        // Always emit the message event regardless of source
+        // This ensures messages from all sources (including self) are processed
+        if (sourceKey !== localKey) {
+          // Add source identification to the message
+          this.emit('new-message', message);
         }
       } catch (err) {
-        writeFileSync('./err', JSON.stringify(err.message))
       }
     }
 

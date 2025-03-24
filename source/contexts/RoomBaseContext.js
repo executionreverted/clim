@@ -1,6 +1,6 @@
 // contexts/RoomBaseContext.js - Direct integration with RoomBase
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
-import fs from 'fs';
+import fs, { writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { createHash, randomBytes } from 'crypto';
@@ -292,7 +292,7 @@ export function RoomBaseProvider({ children }) {
         let messages = [];
         try {
           // Get message stream with limit
-          const stream = room.getMessages({ limit: 1, reverse: true });
+          const stream = room.getMessages({ limit: 10, reverse: true });
 
           // Process the stream
           await new Promise(resolve => {
@@ -346,7 +346,7 @@ export function RoomBaseProvider({ children }) {
         updatePeerInfo(roomKey.id);
 
       } catch (err) {
-        console.error(`Error initializing room ${roomKey.id}:`, err);
+        writeFileSync('./joinerr', JSON.stringify(err.message))
         roomsWithMessages.push({
           id: roomKey.id,
           name: roomKey.name,
@@ -531,6 +531,7 @@ export function RoomBaseProvider({ children }) {
 
         // Wait for pairing to complete
         const room = await pair.finished();
+        await room.ready()
 
         // Only now store the corestore after successful pairing
         corestores.current.set(roomId, store);
@@ -547,13 +548,30 @@ export function RoomBaseProvider({ children }) {
         setupMessageListener(room, roomId);
 
         // Get existing messages safely
+        // Properly load messages with the correct method
         let messages = [];
         try {
-          const messagesResult = await room.getMessages({ limit: 100 });
-          messages = messagesResult?.messages || [];
+          // Use a stream approach for maximum compatibility
+          const messageStream = room.getMessages({ limit: 20, reverse: true });
+
+          // Handle different return types
+          if (messageStream.then) {
+            // Promise-based API
+            messages = await messageStream;
+          } else if (messageStream.on) {
+            // Stream-based API
+            messages = await new Promise(resolve => {
+              const results = [];
+              messageStream.on('data', msg => results.push(msg));
+              messageStream.on('end', () => resolve(results));
+              messageStream.on('error', () => resolve([]));
+            });
+          } else if (Array.isArray(messageStream)) {
+            // Direct array return
+            messages = messageStream;
+          }
         } catch (msgErr) {
           console.error('Failed to retrieve messages:', msgErr);
-          // Continue with empty messages array
         }
 
         // Add to state
@@ -609,7 +627,7 @@ export function RoomBaseProvider({ children }) {
         // Remove message listeners
         const listeners = messageListeners.current.get(roomId) || [];
         for (const listener of listeners) {
-          room.off('new-messages', listener);
+          room.off('new-message', listener);
         }
         messageListeners.current.delete(roomId);
 

@@ -228,12 +228,15 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const totalLines = processedLinesRef.current.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
-
   useEffect(() => {
-    if (messages.length == 0 && totalMessageCount > 0) {
-      handleLoadMore()
+    // When active room changes, automatically try to load messages
+    // if no messages are available but a count exists
+    if (activeRoomId && (!messages || messages.length === 0) && totalMessageCount > 0) {
+      handleLoadMore();
     }
-  }, [totalMessageCount, messages?.length])
+  }, [activeRoomId]);
+
+
   // Load more messages when scrolled to top
   const handleLoadMore = async () => {
     if (isLoadingMore || !activeRoomId || !hasMoreMessages) return;
