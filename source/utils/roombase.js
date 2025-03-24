@@ -15,8 +15,6 @@ import { writeFileSync, writeSync } from 'fs';
 /**
  * Class for initiating pairing with a RoomBase
  */
-
-export const ActivePeers = {}
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
     super()
@@ -303,8 +301,6 @@ class RoomBase extends ReadyResource {
       })
       this.swarm.on('connection', (connection, peerInfo) => {
         this.store.replicate(connection)
-        ActivePeers[this.roomId] = this.swarm.connections.size
-        this.emit('peer-update', {})
       })
     }
 
@@ -357,7 +353,7 @@ class RoomBase extends ReadyResource {
 
   // ---------- Message API ----------
 
-  async sendMessage(message, onlyclient = false) {
+  async sendMessage(message) {
     // Make sure base is ready
     await this.base.ready();
 
@@ -369,10 +365,6 @@ class RoomBase extends ReadyResource {
       timestamp: message.timestamp || Date.now(),
       system: !!message.system
     };
-
-    if (onlyclient) {
-      return;
-    }
 
     try {
       // Use the dispatch function from hyperdispatch for proper message encoding
@@ -399,6 +391,10 @@ class RoomBase extends ReadyResource {
           console.error("Error updating room count:", updateErr);
         }
       }
+
+      // Emit event for real-time updates
+      // this.emit('new-message', msg);
+
       return msg.id;
     } catch (err) {
 
@@ -432,13 +428,6 @@ class RoomBase extends ReadyResource {
       console.error('Error getting message count:', err);
       return 1;
     }
-  }
-
-  async getConnectedPeers() {
-    if (!this.base || !this.base.view) {
-      throw new Error("Error initializing corestore");
-    }
-    return await this.swarm.connections.size
   }
 
   /**

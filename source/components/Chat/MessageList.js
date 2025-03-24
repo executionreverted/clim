@@ -228,6 +228,12 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const totalLines = processedLinesRef.current.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
 
+
+  useEffect(() => {
+    if (messages.length == 0 && totalMessageCount > 0) {
+      handleLoadMore()
+    }
+  }, [totalMessageCount, messages?.length])
   // Load more messages when scrolled to top
   const handleLoadMore = async () => {
     if (isLoadingMore || !activeRoomId || !hasMoreMessages) return;

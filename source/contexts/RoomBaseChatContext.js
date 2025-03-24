@@ -1,4 +1,4 @@
-// Update to RoomBaseChatContext.js to add loading state
+// contexts/RoomBaseChatContext.js
 import clipboard from 'clipboardy';
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { getBindingsForContext } from '../utils/keymap.js';
@@ -11,8 +11,6 @@ const ACTIONS = {
   SET_INPUT_MODE: 'SET_INPUT_MODE',
   SET_SHOW_FILE_EXPLORER: 'SET_SHOW_FILE_EXPLORER',
   SET_FILE_ATTACHMENTS: 'SET_FILE_ATTACHMENTS',
-  SET_LOADING: 'SET_LOADING', // New action for loading state
-  SET_LOADING_MESSAGE: 'SET_LOADING_MESSAGE', // For loading message
 };
 
 // Configuration
@@ -24,7 +22,7 @@ const initialState = {
   focusedPanel: 'messages', // 'rooms', 'messages', 'users', 'input'
   inputMode: false,
   showFileExplorer: false,
-  pendingAttachments: null,
+  pendingAttachments: null
 };
 
 // Chat reducer
@@ -66,6 +64,7 @@ const chatReducer = (state, action) => {
         showFileExplorer: false,
         pendingAttachments: action.payload
       };
+
     default:
       return state;
   }
@@ -91,19 +90,17 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     peers,
     createInviteCode,
     updateProfile,
+    roomConnections,
     error,
     loadMoreMessages,
-    messageCounts,
-    connectedPeers,
-    isLoading,
-    loadingMessage
+    messageCounts
   } = useRoomBase();
 
   const {
     inputValue,
     focusedPanel,
     inputMode,
-    showFileExplorer,
+    showFileExplorer
   } = state;
 
   // Get chat keybindings for reference
@@ -126,24 +123,6 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     dispatch({ type: ACTIONS.SET_SHOW_FILE_EXPLORER, payload: show });
   }, []);
 
-
-  // Wrap the room creation with loading indicators
-  const handleCreateRoom = useCallback(async (name) => {
-    if (!name || name.trim() === '') return null;
-    try {
-      const roomId = await createRoom(name);
-      return roomId;
-    } finally {
-    }
-  }, [createRoom]);
-
-  // Wrap the room joining with loading indicators
-  const handleJoinRoom = useCallback(async (inviteCode) => {
-    if (!inviteCode) return null;
-    const roomId = await joinRoom(inviteCode);
-    return roomId;
-  }, []);
-
   // Handle input submission
   const handleInputSubmit = useCallback((localInputVal) => {
     if (!localInputVal || !localInputVal.trim()) return true;
@@ -162,9 +141,10 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
     if (localInputVal.trim().startsWith('/join ')) {
       const inviteCode = localInputVal.replace("/join ", "").trim();
+      ;
 
       if (inviteCode) {
-        handleJoinRoom(inviteCode);
+        joinRoom(inviteCode);
         setInputValue('');
         setInputMode(false);
       }
@@ -174,7 +154,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     if (localInputVal.trim().startsWith('/create ')) {
       const roomName = localInputVal.trim().substring(8);
       if (roomName) {
-        handleCreateRoom(roomName);
+        createRoom(roomName);
         setInputValue('');
         setInputMode(false);
       }
@@ -222,7 +202,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     if (focusedPanel === 'rooms' && inputMode) {
       // Create room if in rooms panel and input mode
       if (localInputVal.trim()) {
-        handleCreateRoom(localInputVal);
+        createRoom(localInputVal);
         setInputMode(false);
         setInputValue('');
       }
@@ -247,8 +227,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     inputMode,
     activeRoomId,
     sendMessage,
-    handleCreateRoom,
-    handleJoinRoom,
+    createRoom,
+    joinRoom,
     leaveRoom,
     setInputValue,
     createInviteCode,
@@ -320,12 +300,11 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     setFocusedPanel,
     inputMode,
     setInputMode,
-    isLoading,
-    loadingMessage,
+
     // Functions
     sendMessage,
-    createRoom: handleCreateRoom,
-    joinRoom: handleJoinRoom,
+    createRoom,
+    joinRoom,
     leaveRoom,
     handleInputSubmit,
     showFileExplorer,
@@ -335,9 +314,10 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     onBack,
     error,
     messageCounts,
-    connectedPeers,
+
     // Additional from RoomBase
     peers,
+    roomConnections
   };
 
   return (
