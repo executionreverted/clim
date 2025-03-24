@@ -725,15 +725,11 @@ export function RoomBaseProvider({ children }) {
       }
 
       // Add console logging to debug message IDs
-      console.log(`Current message IDs: ${currentMessages.map(m => m.id).join(', ')}`);
-      console.log(`Retrieved ${olderMessages.length} older messages`);
-      console.log(`Older message IDs: ${olderMessages.map(m => m.id).join(', ')}`);
 
       // Filter out any messages that might be duplicates (by ID)
       const currentMessageIds = new Set(currentMessages.map(msg => msg.id));
       const uniqueOlderMessages = olderMessages.filter(msg => !currentMessageIds.has(msg.id));
 
-      console.log(`After filtering: ${uniqueOlderMessages.length} unique older messages`);
 
       if (uniqueOlderMessages.length === 0) {
         return false; // No new unique messages found

@@ -382,7 +382,6 @@ class RoomBase extends ReadyResource {
         const currentCount = room.messageCount || 0;
         const newCount = currentCount + 1;
 
-        console.log(`Updating count from ${currentCount} to ${newCount}`);
 
         // Try direct modification with delete/insert instead of update
         try {
