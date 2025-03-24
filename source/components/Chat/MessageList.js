@@ -138,18 +138,41 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const availableHeight = Math.max(5, height - 6); // Account for header and padding
 
   // Process messages into display lines
-  // KEY FIX: We need to ensure each line has a unique identifier
+  // FIXED KEY GENERATION: We need to ensure each line has a truly unique identifier
   // that remains stable across renders and isn't dependent on array position
   const buildProcessedLines = () => {
     const lines = [];
+    // Keep track of seen message IDs to avoid duplicates
+    const seenMessageIds = new Set();
 
     if (messages.length > 0) {
-      // Sort messages by timestamp
-      const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+      // Sort messages by timestamp first, then by ID for stable ordering
+      const sortedMessages = [...messages].sort((a, b) => {
+        const timeDiff = a.timestamp - b.timestamp;
+        // If timestamps are the same, use ID as a tiebreaker
+        return timeDiff !== 0 ? timeDiff : (a.id || '').localeCompare(b.id || '');
+      });
 
-      sortedMessages.forEach((message) => {
-        // Create a unique message ID if none exists
-        const messageId = message.id || `msg-${message.timestamp}-${message.sender}`;
+      sortedMessages.forEach((message, messageIndex) => {
+        // Generate a deterministic unique ID that's stable across renders
+        // Use the message's actual ID if it exists, otherwise create a synthetic one
+        let messageId;
+
+        if (message.id) {
+          messageId = message.id;
+        } else {
+          // Create a more unique synthetic ID using timestamp and content hash
+          const contentHash = message.content ?
+            message.content.slice(0, 10).replace(/\W/g, '') : '';
+          messageId = `msg-${message.timestamp}-${contentHash}-${messageIndex}`;
+        }
+
+        // Ensure we don't have duplicate IDs (which can happen with poorly generated IDs)
+        if (seenMessageIds.has(messageId)) {
+          // If we've seen this ID before, make it unique by adding an index
+          messageId = `${messageId}-dup-${seenMessageIds.size}`;
+        }
+        seenMessageIds.add(messageId);
 
         // Calculate max username length to prevent overflow
         const maxUsernameLength = Math.min(20, Math.floor(contentWidth / 3));
@@ -163,8 +186,8 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
           user: displayName,
           timestamp: message.timestamp,
           messageId,
-          // Create a stable unique key for this line
-          uniqueKey: `header-${messageId}`
+          // Create a globally unique key for this line
+          uniqueKey: `h-${messageId}-${forceRender}`
         });
 
         // Process message content into lines that fit within width
@@ -178,16 +201,16 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
             hasAttachment: message.content && message.content.startsWith('📎'),
             isFileMessage: message.content && message.content.startsWith('📎'),
             system: message.system,
-            // Create a stable unique key for this line
-            uniqueKey: `content-${messageId}-${lineIdx}`
+            // Create a globally unique key for this line
+            uniqueKey: `c-${messageId}-${lineIdx}-${forceRender}`
           });
         });
 
-        // Add a separator with a stable unique key
+        // Add a separator with a globally unique key
         lines.push({
           type: 'separator',
           messageId,
-          uniqueKey: `separator-${messageId}`
+          uniqueKey: `s-${messageId}-${forceRender}`
         });
       });
     }
@@ -299,6 +322,11 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
 
   // This console.log helps debug render cycles without affecting performance much
   // It will show in the terminal when the component re-renders
+  React.useEffect(() => {
+    if (forceRender > 1) {
+      console.debug(`MessageList re-render: ${messages.length} messages, force=${forceRender}`);
+    }
+  }, [forceRender, messages.length]);
 
   // Add automatic loading of more messages when we reach the top
   useEffect(() => {
