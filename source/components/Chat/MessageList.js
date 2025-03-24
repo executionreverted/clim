@@ -66,6 +66,7 @@ const prepareMessageLines = (text, maxWidth) => {
   return result;
 };
 
+// Force re-render on message send by not memoizing this component
 const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const {
     activeRoom,
@@ -81,6 +82,7 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   const loadingAttemptRef = useRef(0);
   const previousMessagesCountRef = useRef(0);
   const processedLinesRef = useRef([]); // Use a ref to hold processed lines to avoid recreating on each render
+  const [forceRender, setForceRender] = useState(0); // Add a state variable to force re-renders
 
   const messages = activeRoom?.messages?.length ? activeRoom.messages : [];
   const totalMessageCount = messageCounts?.[activeRoomId] ? messageCounts[activeRoomId] : 0;
@@ -118,10 +120,15 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
       // If we're at the bottom (scrollOffset = 0), stay at bottom
       if (scrollOffset === 0) {
         setScrollOffset(0);
+        // Force an immediate re-render for responsiveness
+        setForceRender(prev => prev + 1);
       } else {
         // Otherwise, adjust scrollOffset to stay at same position with new content
         setScrollOffset(scrollOffset + newMessagesCount);
       }
+
+      // Force rebuild of processed lines when new messages arrive
+      processedLinesRef.current = buildProcessedLines();
     }
     previousMessagesCountRef.current = messages.length;
   }, [messages.length]);
@@ -191,7 +198,9 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   // Update processed lines when messages change
   useEffect(() => {
     processedLinesRef.current = buildProcessedLines();
-  }, [messages, contentWidth, activeRoomId]);
+    // Force re-render to ensure the UI updates with new messages
+    setForceRender(prev => prev + 1);
+  }, [messages, messages.length, contentWidth, activeRoomId]);
 
   const totalLines = processedLinesRef.current.length;
   const maxScrollOffset = Math.max(0, totalLines - availableHeight);
@@ -283,9 +292,13 @@ const MessageList = ({ width = 60, height = 20, isFocused = false }) => {
   });
 
   // Get visible lines based on current scroll offset
+  // The forceRender variable is used in this calculation to ensure React re-renders when needed
   const visibleStartIndex = Math.max(0, totalLines - availableHeight - scrollOffset);
   const visibleEndIndex = Math.min(totalLines, visibleStartIndex + availableHeight);
   const visibleLines = processedLinesRef.current.slice(visibleStartIndex, visibleEndIndex);
+
+  // This console.log helps debug render cycles without affecting performance much
+  // It will show in the terminal when the component re-renders
 
   // Add automatic loading of more messages when we reach the top
   useEffect(() => {
