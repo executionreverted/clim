@@ -259,6 +259,9 @@ export function RoomBaseProvider({ children }) {
 
     for (const roomKey of roomKeys) {
       try {
+        if (corestores.current.get(roomKey.id)) {
+          continue
+        }
         // Create a unique corestore for each room
         const roomStorePath = path.join(ROOMS_DIR, roomKey.id);
         ensureDirectoryExists(roomStorePath);
@@ -542,6 +545,7 @@ export function RoomBaseProvider({ children }) {
 
         // Setup listeners after the room is fully initialized
         setupMessageListener(room, roomId);
+        initializeRooms()
 
         // Get existing messages safely
         let messages = [];
@@ -774,6 +778,14 @@ export function RoomBaseProvider({ children }) {
 
       // Send through RoomBase
       await room.sendMessage(message);
+
+      dispatch({
+        type: ACTIONS.ADD_MESSAGE,
+        payload: {
+          roomId: room.roomId,
+          message: message
+        }
+      })
       // Add to state (this will likely be duplicated by the message listener,
       // but ensuring immediate feedback is worth it)
 

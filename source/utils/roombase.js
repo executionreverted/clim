@@ -208,14 +208,17 @@ class RoomBase extends ReadyResource {
         // Check using any reliable way to identify our own messages
         // Only emit for messages from other writers
         //
-        if (message && message?.content) {
+        const sourceKey = node.from?.key?.toString('hex')
+        const localKey = this.base.local.key.toString('hex')
+
+        // Only emit for messages from other writers
+        if (message?.content && sourceKey && sourceKey !== localKey) {
           this.emit('new-message', message)
         }
       } catch (err) {
         writeFileSync('./err', JSON.stringify(err.message))
       }
     }
-
 
     await view.flush()
   }
