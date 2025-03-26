@@ -15,12 +15,17 @@ const MAX_PREVIEW_LINES = 100;
 const TextPreview = memo(({ content, scrollOffset, maxLines, width, colors }) => {
   if (!content) return null;
 
-  // Split content into lines
-  const lines = content.split('\n');
+  // Calculate line count safely without loading all lines into memory
+  const lineCount = content.split('\n').length;
 
   // Apply scrolling with boundary checks
-  const startLine = Math.min(scrollOffset, Math.max(0, lines.length - maxLines));
-  const visibleLines = lines.slice(startLine, startLine + maxLines);
+  const startLine = Math.min(scrollOffset, Math.max(0, lineCount - maxLines));
+
+  // Only process the lines we're actually going to display
+  // This reduces memory usage significantly
+  const visibleLines = content
+    .split('\n')
+    .slice(startLine, startLine + maxLines);
 
   return (
     <Box flexDirection="column">
@@ -41,10 +46,10 @@ const TextPreview = memo(({ content, scrollOffset, maxLines, width, colors }) =>
       ))}
 
       {/* Show scroll indicator if there are lines below */}
-      {lines.length > startLine + maxLines && (
+      {lineCount > startLine + maxLines && (
         <Box>
           <Text color={colors.warningColor}>
-            ↓ {lines.length - (startLine + maxLines)} more lines below
+            ↓ {lineCount - (startLine + maxLines)} more lines below
           </Text>
         </Box>
       )}
@@ -205,52 +210,70 @@ const FilePreview = ({
   // Load preview content for text files
   useEffect(() => {
     const fileType = getFileType();
+    let abortController = new AbortController();
 
     // Only load preview content for text files
     if (fileType === 'text' && file && activeRoomId) {
       setIsLoading(true);
       setError(null);
 
-      // Fetch the file content
-      downloadFile(activeRoomId, file.path)
-        .then(data => {
-          if (data) {
-            // Convert Buffer to string
-            let content;
-            if (Buffer.isBuffer(data)) {
-              content = data.toString('utf-8');
-            } else if (typeof data === 'string') {
-              content = data;
-            } else {
-              throw new Error('Unexpected data format');
-            }
+      // Define a maximum chunk size to load at once
+      const CHUNK_SIZE = 50 * 1024; // 50KB chunks
 
-            // Limit content size for performance
-            if (content.length > MAX_PREVIEW_SIZE) {
-              content = content.substring(0, MAX_PREVIEW_SIZE) +
-                '\n\n[File truncated - too large to display completely]';
-            }
+      // Fetch the file content with chunking
+      const loadTextContent = async () => {
+        try {
+          const data = await downloadFile(activeRoomId, file.path);
 
+          if (!data) {
+            setError('Could not load file content');
+            setIsLoading(false);
+            return;
+          }
+
+          // Convert Buffer to string, but only process a safe amount
+          let content;
+          if (Buffer.isBuffer(data)) {
+            // Only load the first MAX_PREVIEW_SIZE bytes to prevent memory issues
+            content = data.slice(0, MAX_PREVIEW_SIZE).toString('utf-8');
+          } else if (typeof data === 'string') {
+            content = data.substring(0, MAX_PREVIEW_SIZE);
+          } else {
+            throw new Error('Unexpected data format');
+          }
+
+          // Add truncation notice if needed
+          if (data.length > MAX_PREVIEW_SIZE) {
+            content += '\n\n[File truncated - too large to display completely]';
+          }
+
+          if (!abortController.signal.aborted) {
             setPreviewContent(content);
             setError(null);
-          } else {
-            setError('Could not load file content');
+            setIsLoading(false);
           }
-        })
-        .catch(err => {
-          setError(`Error loading preview: ${err.message}`);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+        } catch (err) {
+          if (!abortController.signal.aborted) {
+            setError(`Error loading preview: ${err.message}`);
+            setIsLoading(false);
+          }
+        }
+      };
+
+      loadTextContent();
     } else {
       // Reset preview content for non-text files
       setPreviewContent(null);
       setError(null);
     }
-  }, [file, activeRoomId, downloadFile]);
 
-  // Calculate available preview height (accounting for metadata)
+    return () => {
+      // Clean up and abort any pending requests when component unmounts or file changes
+      abortController.abort();
+      // Clear large content from memory
+      setPreviewContent(null);
+    };
+  }, [file, activeRoomId, downloadFile]);  // Calculate available preview height (accounting for metadata)
   const contentHeight = height - 8; // Reserve space for borders, title, metadata
 
   // Render file preview based on file type

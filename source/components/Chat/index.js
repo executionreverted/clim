@@ -1,4 +1,5 @@
-// components/Chat/index.js - Updated to use RoomBaseChatContext
+// Fix for source/components/Chat/index.js
+
 import React, { memo, useState, useEffect } from 'react';
 import { Box, useStdout } from 'ink';
 import { RoomBaseChatProvider } from '../../contexts/RoomBaseChatContext.js';
@@ -10,10 +11,14 @@ import RoomFiles from '../RoomFiles/index.js';
 
 // Inner component that can access the chat context
 const ChatContent = memo(({ width, height }) => {
-  const { showFileExplorer, setShowFileExplorer,
+  const {
+    showFileExplorer,
+    setShowFileExplorer,
     handleFileSelect,
     showRoomFiles,
-    setShowRoomFiles } = useChat();
+    setShowRoomFiles,
+    activeRoomId
+  } = useChat();
 
   // Define handlers for file explorer in chat
   const handlers = {
@@ -39,15 +44,16 @@ const ChatContent = memo(({ width, height }) => {
     }
   };
 
-  // Use keymap only when file explorer is shown
+  // Use keymap only when file explorer or room files is shown
   useKeymap('global', handlers, { isActive: showFileExplorer || showRoomFiles });
+
+  // Return the appropriate component based on current state
   if (showFileExplorer) {
     return (
       <FileExplorer
         initialPath={process.cwd()}
         onBack={handlers.back}
         onFileSelect={(files) => {
-          console.log('Files selected from explorer:', files);
           if (files) {
             handleFileSelect(files);
           } else {
@@ -59,11 +65,13 @@ const ChatContent = memo(({ width, height }) => {
       />
     );
   }
-  if (showRoomFiles) {
+
+  if (showRoomFiles && activeRoomId) {
     return (
       <RoomFiles onBack={() => setShowRoomFiles(false)} />
     );
   }
+
   return (
     <ChatLayout
       width={width}
@@ -100,6 +108,5 @@ const Chat = ({ onBack }) => {
     </RoomBaseChatProvider>
   );
 };
-
 
 export default Chat;

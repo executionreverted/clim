@@ -1,8 +1,8 @@
-// contexts/RoomBaseChatContext.js
-import clipboard from 'clipboardy';
+// source/contexts/RoomBaseChatContext.js
 import React, { useState, createContext, useContext, useReducer, useCallback } from 'react';
 import { getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
+import clipboardy from 'clipboardy';
 
 // Define action types
 const ACTIONS = {
@@ -11,6 +11,9 @@ const ACTIONS = {
   SET_INPUT_MODE: 'SET_INPUT_MODE',
   SET_SHOW_FILE_EXPLORER: 'SET_SHOW_FILE_EXPLORER',
   SET_FILE_ATTACHMENTS: 'SET_FILE_ATTACHMENTS',
+  SET_SHOW_ROOM_FILES: 'SET_SHOW_ROOM_FILES',
+  SET_LOADING: 'SET_LOADING',
+  SET_LOADING_MESSAGE: 'SET_LOADING_MESSAGE'
 };
 
 // Configuration
@@ -22,7 +25,10 @@ const initialState = {
   focusedPanel: 'messages', // 'rooms', 'messages', 'users', 'input'
   inputMode: false,
   showFileExplorer: false,
-  pendingAttachments: null
+  pendingAttachments: null,
+  showRoomFiles: false,
+  isLoading: false,
+  loadingMessage: ''
 };
 
 // Chat reducer
@@ -55,7 +61,9 @@ const chatReducer = (state, action) => {
     case ACTIONS.SET_SHOW_FILE_EXPLORER:
       return {
         ...state,
-        showFileExplorer: action.payload
+        showFileExplorer: action.payload,
+        // Make sure we don't show both at once
+        showRoomFiles: action.payload ? false : state.showRoomFiles
       };
 
     case ACTIONS.SET_FILE_ATTACHMENTS:
@@ -63,6 +71,26 @@ const chatReducer = (state, action) => {
         ...state,
         showFileExplorer: false,
         pendingAttachments: action.payload
+      };
+
+    case ACTIONS.SET_SHOW_ROOM_FILES:
+      return {
+        ...state,
+        showRoomFiles: action.payload,
+        // Make sure we don't show both at once
+        showFileExplorer: action.payload ? false : state.showFileExplorer
+      };
+
+    case ACTIONS.SET_LOADING:
+      return {
+        ...state,
+        isLoading: action.payload
+      };
+
+    case ACTIONS.SET_LOADING_MESSAGE:
+      return {
+        ...state,
+        loadingMessage: action.payload
       };
 
     default:
@@ -90,8 +118,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     peers,
     createInviteCode,
     updateProfile,
-    roomConnections,
-    error,
+    identity,
+    connections,
     loadMoreMessages,
     messageCounts,
 
@@ -110,10 +138,12 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     inputValue,
     focusedPanel,
     inputMode,
-    showFileExplorer
+    showFileExplorer,
+    showRoomFiles,
+    isLoading,
+    loadingMessage
   } = state;
 
-  const [showRoomFiles, setShowRoomFiles] = useState(false);
   // Get chat keybindings for reference
   const chatBindings = getBindingsForContext('chat');
 
@@ -134,16 +164,60 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     dispatch({ type: ACTIONS.SET_SHOW_FILE_EXPLORER, payload: show });
   }, []);
 
+  const setShowRoomFiles = useCallback((show) => {
+    dispatch({ type: ACTIONS.SET_SHOW_ROOM_FILES, payload: show });
+  }, []);
+
+  const setLoading = useCallback((loading, message = '') => {
+    dispatch({ type: ACTIONS.SET_LOADING, payload: loading });
+    if (message) {
+      dispatch({ type: ACTIONS.SET_LOADING_MESSAGE, payload: message });
+    }
+  }, []);
+
+  // Safely prepare file loading with error handling
+  const safeLoadRoomFiles = useCallback(async (roomId, path) => {
+    if (!roomId) return false;
+
+    try {
+      setLoading(true, 'Loading files...');
+      await loadRoomFiles(roomId, path);
+      return true;
+    } catch (err) {
+      console.error(`Error loading files for room ${roomId}:`, err);
+      if (activeRoomId) {
+        sendMessage(
+          activeRoomId,
+          `Error loading files: ${err.message}`,
+          true
+        );
+      }
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [activeRoomId, loadRoomFiles, sendMessage, setLoading]);
+
   // Handle input submission
   const handleInputSubmit = useCallback((localInputVal) => {
     if (!localInputVal || !localInputVal.trim()) return true;
 
+    // Check for the /files command first
     if (localInputVal.trim() === '/files') {
       setInputValue('');
-      setShowRoomFiles(true);
+      setInputMode(false);
+
+      if (activeRoomId) {
+        // Load files before showing the file browser UI
+        safeLoadRoomFiles(activeRoomId, currentDirectory[activeRoomId] || '/')
+          .then(success => {
+            if (success) {
+              setShowRoomFiles(true);
+            }
+          });
+      }
       return true;
     }
-
 
     // Check for commands first
     if (localInputVal.trim() === '/send') {
@@ -154,17 +228,34 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
     if (localInputVal.trim() === '/clear') {
       setInputValue('');
+      // Clearing history isn't implemented in RoomBaseContext yet
       return true;
     }
 
     if (localInputVal.trim().startsWith('/join ')) {
       const inviteCode = localInputVal.replace("/join ", "").trim();
-      ;
 
       if (inviteCode) {
-        joinRoom(inviteCode);
+        setLoading(true, 'Joining room...');
+        joinRoom(inviteCode)
+          .then(() => {
+            setInputMode(false);
+          })
+          .catch(err => {
+            console.error('Error joining room:', err);
+            if (activeRoomId) {
+              sendMessage(
+                activeRoomId,
+                `Error joining room: ${err.message}`,
+                true
+              );
+            }
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+
         setInputValue('');
-        setInputMode(false);
       }
       return true;
     }
@@ -172,15 +263,36 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     if (localInputVal.trim().startsWith('/create ')) {
       const roomName = localInputVal.trim().substring(8);
       if (roomName) {
-        createRoom(roomName);
+        setLoading(true, 'Creating room...');
+        createRoom(roomName)
+          .then(() => {
+            setInputMode(false);
+          })
+          .catch(err => {
+            console.error('Error creating room:', err);
+            if (activeRoomId) {
+              sendMessage(
+                activeRoomId,
+                `Error creating room: ${err.message}`,
+                true
+              );
+            }
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+
         setInputValue('');
-        setInputMode(false);
       }
       return true;
     }
 
     if (localInputVal.trim() === '/leave' && activeRoomId) {
-      leaveRoom(activeRoomId);
+      leaveRoom(activeRoomId)
+        .catch(err => {
+          console.error('Error leaving room:', err);
+        });
+
       setInputValue('');
       return true;
     }
@@ -188,31 +300,70 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     if (localInputVal.trim().startsWith('/profile ')) {
       const username = localInputVal.trim().substring(9);
       if (username) {
-        const success = updateProfile(username);
-        if (success) {
-          setInputValue('');
+        setLoading(true, 'Updating profile...');
+        updateProfile(username)
+          .then(success => {
+            if (success && activeRoomId) {
+              // Send system message confirming profile update
+              sendMessage(
+                activeRoomId,
+                `Your username has been updated to "${username}"`,
+                true
+              );
+            }
+          })
+          .catch(err => {
+            console.error('Error updating profile:', err);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
 
-          // Send system message confirming profile update
-          if (activeRoomId) {
-            sendMessage(activeRoomId, `Your username has been updated to "${username}"`, true);
-          }
-        }
+        setInputValue('');
       }
       return true;
     }
 
     if (localInputVal.trim() === '/invite' && activeRoomId) {
-      createInviteCode(activeRoomId).then(inviteCode => {
-        if (inviteCode) {
-          // Display a message to the user that the invite was copied
-          clipboard.writeSync(`/join ${inviteCode}`)
-          sendMessage(
-            activeRoomId,
-            `Invite code copied to clipboard! Others can join using "/join ${inviteCode}"`,
-            true
-          );
-        }
-      });
+      setLoading(true, 'Creating invite...');
+      createInviteCode(activeRoomId)
+        .then(inviteCode => {
+          if (inviteCode) {
+            try {
+              // Copy to clipboard
+              clipboardy.writeSync(`/join ${inviteCode}`);
+
+              // Display a message to the user
+              sendMessage(
+                activeRoomId,
+                `Invite code copied to clipboard! Others can join using "/join ${inviteCode}"`,
+                true
+              );
+            } catch (clipErr) {
+              // If clipboard fails, just show the code
+              sendMessage(
+                activeRoomId,
+                `Invite code: ${inviteCode}. Share this with others to join.`,
+                true
+              );
+            }
+          }
+        })
+        .catch(err => {
+          console.error('Error creating invite:', err);
+
+          if (activeRoomId) {
+            sendMessage(
+              activeRoomId,
+              `Error creating invite: ${err.message}`,
+              true
+            );
+          }
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+
       setInputValue('');
       return true;
     }
@@ -220,8 +371,18 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     if (focusedPanel === 'rooms' && inputMode) {
       // Create room if in rooms panel and input mode
       if (localInputVal.trim()) {
-        createRoom(localInputVal);
-        setInputMode(false);
+        setLoading(true, 'Creating room...');
+        createRoom(localInputVal)
+          .then(() => {
+            setInputMode(false);
+          })
+          .catch(err => {
+            console.error('Error creating room:', err);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+
         setInputValue('');
       }
       return true;
@@ -234,7 +395,11 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
         setInputValue('');
 
         // Then send the message using RoomBaseContext
-        sendMessage(activeRoomId, messageToSend);
+        sendMessage(activeRoomId, messageToSend)
+          .catch(err => {
+            console.error('Error sending message:', err);
+          });
+
         return true;
       }
     }
@@ -250,55 +415,59 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     leaveRoom,
     setInputValue,
     createInviteCode,
-    setShowRoomFiles,
     updateProfile,
-    showRoomFiles
+    setShowFileExplorer,
+    setShowRoomFiles,
+    setLoading,
+    setInputMode,
+    safeLoadRoomFiles,
+    currentDirectory
   ]);
 
-
+  // Handle file selection for message attachments
   const handleFileSelect = useCallback((files) => {
     if (!files || (Array.isArray(files) && files.length === 0)) {
-      dispatch({
-        type: ACTIONS.SET_SHOW_FILE_EXPLORER,
-        payload: false
-      });
+      setShowFileExplorer(false);
       return;
     }
 
     // Check if we have an active room to send files to
     if (!activeRoomId) {
       console.error('No active room to send files to');
-      dispatch({
-        type: ACTIONS.SET_SHOW_FILE_EXPLORER,
-        payload: false
-      });
+      setShowFileExplorer(false);
       return;
     }
 
     // Convert to array if single file
     const filesArray = Array.isArray(files) ? files : [files];
-    console.log('Selected files:', filesArray); // Add this debug log
 
-    // Actually upload the files to the room's drive
-    filesArray.forEach(file => {
-      uploadFile(activeRoomId, file)
-        .then(success => {
-          console.log(`File upload ${success ? 'succeeded' : 'failed'}: ${file.name}`);
-        })
-        .catch(err => {
-          console.error(`Error uploading file ${file.name}:`, err);
-        });
-    });
+    setLoading(true, 'Uploading files...');
+    setShowFileExplorer(false);
 
-    // Message for UI feedback would still be created, but that's not enough
+    // Upload files one by one to avoid memory issues
+    const uploadFile = async (index) => {
+      if (index >= filesArray.length) {
+        setLoading(false);
+        return;
+      }
 
-    // Close file explorer
-    dispatch({
-      type: ACTIONS.SET_SHOW_FILE_EXPLORER,
-      payload: false
-    });
-  }, [activeRoomId, uploadFile]);
+      const file = filesArray[index];
+      try {
+        await uploadFile(activeRoomId, file);
 
+        // Upload next file
+        uploadFile(index + 1);
+      } catch (err) {
+        console.error(`Error uploading file ${file.name}:`, err);
+
+        // Continue with next file
+        uploadFile(index + 1);
+      }
+    };
+
+    // Start uploading files
+    uploadFile(0);
+  }, [activeRoomId, uploadFile, setShowFileExplorer, setLoading]);
 
   const contextValue = {
     // From RoomBase context
@@ -314,6 +483,10 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     setFocusedPanel,
     inputMode,
     setInputMode,
+    showRoomFiles,
+    setShowRoomFiles,
+    isLoading,
+    loadingMessage,
 
     // Functions
     sendMessage,
@@ -326,13 +499,15 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     handleFileSelect,
     loadMoreMessages,
     onBack,
-    error,
-    messageCounts,
 
     // Additional from RoomBase
     peers,
-    roomConnections,
+    identity,
+    connections,
+    roomConnections: connections, // For backward compatibility
+    messageCounts,
 
+    // File-related
     files,
     fileLoading,
     currentDirectory,
@@ -341,9 +516,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     downloadFile,
     deleteFile,
     createDirectory,
-    navigateDirectory,
-    showRoomFiles,
-    setShowRoomFiles
+    navigateDirectory
   };
 
   return (
@@ -353,4 +526,4 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
   );
 };
 
-export default RoomBaseChatContext;
+export default RoomBaseChatContext

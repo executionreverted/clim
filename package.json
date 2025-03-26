@@ -11,8 +11,7 @@
 		"build": "babel --out-dir=dist source",
 		"dev": "babel --out-dir=dist --watch source",
 		"test": "prettier --check . && xo && ava",
-		"keymap": "node dist/utils/keymap-cli.js",
-		"postinstall": "node dist/utils/keymap-cli.js"
+		"keymap": "node dist/utils/keymap-cli.js"
 	},
 	"files": [
 		"dist"

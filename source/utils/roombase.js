@@ -13,6 +13,10 @@ import crypto from 'crypto';
 
 import { getEncoding } from './spec/hyperdispatch/messages.js'
 import { writeFileSync } from 'fs';
+
+
+const DriveStores = {}
+
 /**
  * Class for initiating pairing with a RoomBase
  */
@@ -28,6 +32,7 @@ class RoomBasePairer extends ReadyResource {
     this.onresolve = null
     this.onreject = null
     this.room = null
+    this.driveStore = opts.driveStore
     this.ready().catch(noop)
   }
 
@@ -58,7 +63,8 @@ class RoomBasePairer extends ReadyResource {
             swarm: this.swarm,
             key: result.key,
             encryptionKey: result.encryptionKey,
-            bootstrap: this.bootstrap
+            bootstrap: this.bootstrap,
+            driveStore: this.driveStore
           })
         }
         this.swarm = null
@@ -92,6 +98,7 @@ class RoomBasePairer extends ReadyResource {
     if (this.store !== null) {
       await this.store.close()
     }
+
 
     if (this.onreject) {
       this.onreject(new Error('Pairing closed'))
@@ -132,6 +139,7 @@ class RoomBase extends ReadyResource {
     this.drive = null;
     this.driveKey = opts.driveKey || null;
     this.driveWatcher = null;
+    this.driveStore = opts.driveStore;
     // Register command handlers
     this._registerHandlers()
 
@@ -261,6 +269,11 @@ class RoomBase extends ReadyResource {
       await this.member.close()
       await this.pairing.close()
       await this.swarm.destroy()
+
+      if (this.drive !== null) {
+        await this.drive.close()
+        await this.driveStore.close()
+      }
     }
 
     await this.base.close()
@@ -292,17 +305,6 @@ class RoomBase extends ReadyResource {
       if (!this.driveKey) {
         this.driveKey = this.drive.key.toString('hex');
         await this._storeDriveKey();
-      }
-
-      // Create initial marker files to establish structure
-      try {
-        const rootFilesExists = await this.drive.exists('/files/.keep');
-        if (!rootFilesExists) {
-          await this.drive.put('/files/.keep', Buffer.from(''));
-          await this.drive.put('/shared/.keep', Buffer.from(''));
-        }
-      } catch (err) {
-        console.error('Error initializing drive structure:', err);
       }
     } catch (err) {
       console.error('Error initializing drive:', err);
@@ -650,7 +652,7 @@ class RoomBase extends ReadyResource {
     return writers;
   }
 
-  async getFiles(directory = '/files', options = {}) {
+  async getFiles(directory = '/', options = {}) {
     if (!this.drive) throw new Error('Drive not initialized');
 
     const { recursive = false, limit = 50 } = options;
@@ -700,7 +702,7 @@ class RoomBase extends ReadyResource {
 
   async uploadFile(data, path, options = {}) {
     if (!this.drive) {
-      console.error('Drive not initialized for file upload');
+      writeFileSync('./fileUpload', 'nvl')
       return null;
     }
 
@@ -726,7 +728,7 @@ class RoomBase extends ReadyResource {
       }
 
       console.log(`Calling drive.put with path: ${normalizedPath}`);
-      await this.drive.put(normalizedPath, data, options);
+      await this.drive.put(normalizedPath + Date.now() + '_' + Math.ceil(Math.random() * 100), data, options);
       console.log(`File upload to ${normalizedPath} successful`);
 
       // Return file metadata
@@ -742,13 +744,43 @@ class RoomBase extends ReadyResource {
     }
   }
 
-  async downloadFile(path) {
+  async downloadFile(path, options = {}) {
     if (!this.drive) throw new Error('Drive not initialized');
+
+    const { maxSize = 1024 * 1024 } = options; // Default to 1MB max
 
     try {
       const fileExists = await this.drive.exists(path);
       if (!fileExists) throw new Error(`File does not exist: ${path}`);
 
+      // Get file size before downloading
+      const entry = await this.drive.entry(path);
+      if (!entry) throw new Error('Unable to get file entry');
+
+      const fileSize = entry.value?.blob?.byteLength || 0;
+
+      // For very large files, implement chunked download or warn user
+      if (fileSize > maxSize) {
+        console.warn(`Large file detected (${fileSize} bytes). Loading first ${maxSize} bytes.`);
+
+        // Create a read stream with limits
+        const stream = this.drive.createReadStream(path, {
+          start: 0,
+          end: maxSize - 1
+        });
+
+        // Collect chunks into a single buffer
+        const chunks = [];
+        for await (const chunk of stream) {
+          chunks.push(chunk);
+        }
+
+        // Combine chunks
+        const buffer = Buffer.concat(chunks);
+        return buffer;
+      }
+
+      // For smaller files, get the entire content
       return await this.drive.get(path);
     } catch (err) {
       console.error(`Error downloading file from ${path}:`, err);

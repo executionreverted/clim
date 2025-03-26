@@ -11,6 +11,7 @@ import RoomBase from '../utils/roombase.js';
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
+const DRIVE_PATH = path.join(CONFIG_DIR, 'drives/')
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
 
 // Create the context
@@ -240,7 +241,7 @@ export function RoomBaseProvider({ children }) {
   const fileWatchers = useRef(new Map())
 
 
-  const loadRoomFiles = useCallback(async (roomId, directory = '/files') => {
+  const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
     const room = roomInstances.current.get(roomId);
     if (!room || !room.drive) return [];
 
@@ -403,7 +404,10 @@ export function RoomBaseProvider({ children }) {
 
   const uploadFile = useCallback(async (roomId, file, customPath = null) => {
     const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return false;
+    if (!room || !room.drive) {
+      writeFileSync('./fileUpload', 'nol')
+      return false
+    }
 
     dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
 
@@ -423,7 +427,9 @@ export function RoomBaseProvider({ children }) {
         // Node.js file path
         fileData = await fs.promises.readFile(file.path);
       } else {
-        throw new Error('Unsupported file type');
+
+        writeFileSync('./fileUpload', 'nob')
+        return false
       }
 
       // Upload to drive
@@ -445,6 +451,7 @@ export function RoomBaseProvider({ children }) {
 
       return !!fileInfo;
     } catch (err) {
+      writeFileSync('./uploadErr', JSON.stringify(err.message))
       console.error(`Error uploading file to room ${roomId}:`, err);
       return false;
     } finally {
@@ -577,7 +584,8 @@ export function RoomBaseProvider({ children }) {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
-          roomName: roomKey.name
+          roomName: roomKey.name,
+          drivePath: DRIVE_PATH
         });
 
         await room.ready();
@@ -757,12 +765,17 @@ export function RoomBaseProvider({ children }) {
       // Create a dedicated corestore for this room
       const store = new Corestore(roomStorePath);
       await store.ready();
-      corestores.current.set(roomId, store);
+
+      const driveStorePath = path.join(ROOMS_DIR, roomId + '_DRIVE');
+      const driveStore = new Corestore(driveStorePath + '/');
+      await driveStore.ready();
+      corestores.current.set(roomId + '_STORE', driveStore);
 
       // Create RoomBase instance with the room-specific corestore
       const room = new RoomBase(store, {
         roomId,
-        roomName
+        roomName,
+        driveStore
       });
 
       await room.ready();
@@ -830,13 +843,19 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
+        const driveStorePath = path.join(ROOMS_DIR, roomId + '_DRIVE');
+        const driveStore = new Corestore(driveStorePath + '/');
+        await driveStore.ready();
+
+
         // Use the static joinRoom method to get drive key properly
-        const room = await RoomBase.joinRoom(store, inviteCode, {});
+        const room = await RoomBase.joinRoom(store, inviteCode, { driveStore });
         await room.ready();
 
         // Only now store the corestore after successful pairing
         corestores.current.set(roomId, store);
 
+        corestores.current.set(roomId + '_STORE', driveStore);
         // Get room info including drive key
         const roomInfo = await room.getRoomInfo();
         const roomName = roomInfo?.name || 'Joined Room';

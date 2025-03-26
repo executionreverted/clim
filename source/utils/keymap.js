@@ -34,6 +34,8 @@ const DEFAULT_KEYMAP = {
     newFile: { key: 'n', description: 'New file' },
     newFolder: { key: 'N', shift: true, description: 'New folder' },
     delete: { key: 'd', description: 'Delete item' },
+    download: { key: 'D', shift: true, description: 'Download file' },
+    uploadFile: { key: 'u', description: 'Upload file' }
   },
   chat: {
     switchPanel: { key: 'tab', description: 'Switch between panels' },
@@ -54,6 +56,9 @@ const DEFAULT_KEYMAP = {
     formatBold: { key: 'b', ctrl: true, description: 'Format text as bold' },
     formatItalic: { key: 'i', ctrl: true, description: 'Format text as italic' },
     formatCode: { key: 'k', ctrl: true, description: 'Format text as code' },
+    // New key bindings for room files
+    viewFiles: { key: 'f', description: 'View room files' },
+    uploadToRoom: { key: 'u', description: 'Upload file to room' },
   },
   options: {
     nextTab: { key: 'rightArrow', description: 'Next tab' },
@@ -68,10 +73,25 @@ const DEFAULT_KEYMAP = {
     createExampleTheme: { key: 'e', description: 'Create example theme' },
     exportSettings: { key: 'x', description: 'Export settings' },
     importSettings: { key: 'i', description: 'Import settings' },
+  },
+  // New keymap for room files view
+  roomFiles: {
+    navigateUp: { key: 'upArrow', description: 'Navigate up' },
+    navigateDown: { key: 'downArrow', description: 'Navigate down' },
+    pageUp: { key: 'pageUp', description: 'Page up' },
+    pageDown: { key: 'pageDown', description: 'Page down' },
+    openDir: { key: 'return', description: 'Open directory' },
+    parentDir: { key: 'h', description: 'Go to parent directory' },
+    back: { key: 'escape', description: 'Return to chat' },
+    previewScrollUp: { key: 'k', description: 'Scroll preview up' },
+    previewScrollDown: { key: 'j', description: 'Scroll preview down' },
+    download: { key: 'd', description: 'Download file' },
+    uploadFile: { key: 'u', description: 'Upload file' },
+    newFolder: { key: 'n', description: 'New folder' },
+    delete: { key: 'x', description: 'Delete file/folder' },
+    refresh: { key: 'r', description: 'Refresh files' },
   }
-};
-
-// Config file path
+};// Config file path
 const CONFIG_FILENAME = '.config/.hyperchatters/keymap.json';
 const CONFIG_PATH = path.join(os.homedir(), CONFIG_FILENAME);
 
