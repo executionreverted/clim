@@ -7,6 +7,7 @@ import useThemeUpdate from "../../hooks/useThemeUpdate.js";
 import FileList from "./FileList.js";
 import FilePreview from "./FilePreview.js";
 import NavigationHelp from "./NavigationHelp.js";
+import FileUpload from "./FileUpload.js";
 import mime from 'mime-types';
 import path from 'path';
 
@@ -33,6 +34,7 @@ const RoomFiles = ({ onBack }) => {
   const [isCreateFolderMode, setIsCreateFolderMode] = useState(false);
   const [folderNameInput, setFolderNameInput] = useState('');
   const [isDeleteConfirmMode, setIsDeleteConfirmMode] = useState(false);
+  const [isUploadMode, setIsUploadMode] = useState(false);
   const fileInputRef = useRef(null);
 
   const currentTheme = useThemeUpdate();
@@ -122,6 +124,36 @@ const RoomFiles = ({ onBack }) => {
     }
   };
 
+  // Handle file upload
+  const handleFileUpload = async (file) => {
+    try {
+      if (!file || !file.path) return false;
+
+      // Read file data
+      const fileData = await fs.promises.readFile(file.path);
+
+      // Determine target path in the room's drive
+      const targetPath = path.join(currentPath, file.name);
+
+      // Upload the file
+      const success = await uploadFile(activeRoomId, {
+        ...file,
+        arrayBuffer: async () => fileData
+      }, targetPath);
+
+      if (success) {
+        // Refresh the file list
+        await loadRoomFiles(activeRoomId, currentPath);
+        return true;
+      }
+
+      return false;
+    } catch (err) {
+      console.error('Error in handleFileUpload:', err);
+      return false;
+    }
+  };
+
   // Define keymap handlers
   const handlers = {
     navigateUp: () => {
@@ -198,13 +230,17 @@ const RoomFiles = ({ onBack }) => {
       setPreviewScrollOffset(Math.max(0, previewScrollOffset - 1));
     },
     previewScrollDown: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isCreateFolderMode || isDeleteConfirmMode || isUploadMode) return;
       setPreviewScrollOffset(prev => prev + 1); // No upper limit needed, FilePreview component will handle it
     },
     newFolder: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isCreateFolderMode || isDeleteConfirmMode || isUploadMode) return;
       setIsCreateFolderMode(true);
       setFolderNameInput('');
+    },
+    uploadFile: () => {
+      if (isCreateFolderMode || isDeleteConfirmMode || isUploadMode) return;
+      setIsUploadMode(true);
     },
     back: () => {
       if (isCreateFolderMode) {
@@ -213,6 +249,10 @@ const RoomFiles = ({ onBack }) => {
       }
       if (isDeleteConfirmMode) {
         setIsDeleteConfirmMode(false);
+        return;
+      }
+      if (isUploadMode) {
+        setIsUploadMode(false);
         return;
       }
       onBack();
@@ -334,6 +374,14 @@ const RoomFiles = ({ onBack }) => {
 
       {/* Navigation help footer */}
       <NavigationHelp width={terminalWidth} />
+
+      {/* File upload modal */}
+      <FileUpload
+        isActive={isUploadMode}
+        onClose={() => setIsUploadMode(false)}
+        onUpload={handleFileUpload}
+        currentPath={currentPath}
+      />
     </Box>
   );
 };

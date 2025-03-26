@@ -699,19 +699,45 @@ class RoomBase extends ReadyResource {
   }
 
   async uploadFile(data, path, options = {}) {
-    if (!this.drive) throw new Error('Drive not initialized');
+    if (!this.drive) {
+      console.error('Drive not initialized for file upload');
+      return null;
+    }
 
     try {
-      await this.drive.put(path, data, options);
+      // Normalize path to ensure it's a valid hyperdrive path
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+      console.log(`Uploading file to path: ${normalizedPath}, size: ${data.length} bytes`);
+
+      // Make sure parent directory exists
+      const dirPath = normalizedPath.split('/').slice(0, -1).join('/');
+      if (dirPath && dirPath !== '/') {
+        try {
+          // Create parent directories if they don't exist
+          const exists = await this.drive.exists(dirPath);
+          if (!exists) {
+            console.log(`Creating parent directory: ${dirPath}`);
+            await this.createDirectory(dirPath);
+          }
+        } catch (dirErr) {
+          console.error(`Error checking/creating directory ${dirPath}:`, dirErr);
+          // Continue anyway - the put might still work
+        }
+      }
+
+      console.log(`Calling drive.put with path: ${normalizedPath}`);
+      await this.drive.put(normalizedPath, data, options);
+      console.log(`File upload to ${normalizedPath} successful`);
 
       // Return file metadata
       return {
-        path,
+        path: normalizedPath,
         size: data.length,
-        name: path.split('/').pop()
+        name: normalizedPath.split('/').pop()
       };
     } catch (err) {
-      console.error(`Error uploading file to ${path}:`, err);
+      console.error(`Error in RoomBase.uploadFile to ${path}:`, err);
+      if (err.stack) console.error(err.stack);
       return null;
     }
   }

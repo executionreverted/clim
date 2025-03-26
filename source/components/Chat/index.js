@@ -46,7 +46,14 @@ const ChatContent = memo(({ width, height }) => {
       <FileExplorer
         initialPath={process.cwd()}
         onBack={handlers.back}
-        onFileSelect={handleFileSelect}
+        onFileSelect={(files) => {
+          console.log('Files selected from explorer:', files);
+          if (files) {
+            handleFileSelect(files);
+          } else {
+            setShowFileExplorer(false);
+          }
+        }}
         mode="picker"
         multiSelect={true} // Enable multiselect
       />

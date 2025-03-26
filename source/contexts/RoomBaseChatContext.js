@@ -255,7 +255,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     showRoomFiles
   ]);
 
-  // Handle file selection for message attachments
+
   const handleFileSelect = useCallback((files) => {
     if (!files || (Array.isArray(files) && files.length === 0)) {
       dispatch({
@@ -277,34 +277,28 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
     // Convert to array if single file
     const filesArray = Array.isArray(files) ? files : [files];
+    console.log('Selected files:', filesArray); // Add this debug log
 
-    // Create the message for file(s)
-    const totalSize = filesArray.reduce((sum, file) => sum + file.size, 0);
-    let messageText;
+    // Actually upload the files to the room's drive
+    filesArray.forEach(file => {
+      uploadFile(activeRoomId, file)
+        .then(success => {
+          console.log(`File upload ${success ? 'succeeded' : 'failed'}: ${file.name}`);
+        })
+        .catch(err => {
+          console.error(`Error uploading file ${file.name}:`, err);
+        });
+    });
 
-    if (filesArray.length === 1) {
-      // Single file message
-      const file = filesArray[0];
-      messageText = `📎 Shared file: ${file.name} (${file.size} bytes)`;
-    } else {
-      // Multiple files message
-      messageText = `📎 Shared ${filesArray.length} files (${Math.round(totalSize / 1024)} KB total)\n`;
-      filesArray.forEach((file, index) => {
-        messageText += `\n${index + 1}. ${file.name} (${file.size} bytes)`;
-      });
-    }
-
-    // Send the message using RoomBaseContext
-    if (activeRoomId) {
-      sendMessage(activeRoomId, messageText);
-    }
+    // Message for UI feedback would still be created, but that's not enough
 
     // Close file explorer
     dispatch({
       type: ACTIONS.SET_SHOW_FILE_EXPLORER,
       payload: false
     });
-  }, [activeRoomId, sendMessage]);
+  }, [activeRoomId, uploadFile]);
+
 
   const contextValue = {
     // From RoomBase context
