@@ -279,7 +279,6 @@ class RoomBase extends ReadyResource {
     await this.base.close()
   }
 
-
   async _initializeDrive() {
     try {
       // Try to get drive key from metadata if not provided
@@ -292,11 +291,11 @@ class RoomBase extends ReadyResource {
 
       // Initialize Hyperdrive with key if available
       if (this.driveKey) {
-        // Use existing drive key
-        this.drive = new Hyperdrive(this.store, Buffer.from(this.driveKey, 'hex'));
+        // Use existing drive key - convert from hex string to Buffer
+        this.drive = new Hyperdrive(this.driveStore, Buffer.from(this.driveKey, 'hex'));
       } else {
         // Create new drive
-        this.drive = new Hyperdrive(this.store);
+        this.drive = new Hyperdrive(this.driveStore);
       }
 
       await this.drive.ready();
@@ -306,12 +305,54 @@ class RoomBase extends ReadyResource {
         this.driveKey = this.drive.key.toString('hex');
         await this._storeDriveKey();
       }
+
+      // Create root folders for better organization
+      await this._ensureRootFolders();
     } catch (err) {
       console.error('Error initializing drive:', err);
       throw err;
     }
   }
 
+
+  async _setupDriveReplication() {
+    if (!this.drive || !this.swarm) return;
+
+    try {
+
+      this.driveSwarm = new Hyperswarm()
+
+      this.driveSwarm.on('connection', (socket) => drive.replicate(socket))
+      // Get the drive's discovery key
+      const driveDiscoveryKey = this.drive.discoveryKey;
+      // Join the swarm with the drive's discovery key
+      this.driveSwarm.join(driveDiscoveryKey, {
+        server: true,
+        client: true
+      });
+
+      // Set up connection handler for drive replication
+      this.driveSwarm.on('connection', (connection) => {
+        // Replicate the drive with this connection
+        this.drive.replicate(connection);
+
+        // Listen for connection close to handle cleanup
+        connection.on('close', () => {
+          // Handle connection close
+          console.log('Drive replication connection closed');
+        });
+
+        // Handle connection errors
+        connection.on('error', (err) => {
+          console.error('Drive replication connection error:', err);
+        });
+      });
+
+      console.log('Drive replication set up successfully');
+    } catch (err) {
+      console.error('Error setting up drive replication:', err);
+    }
+  }
 
   async _initializeRoom() {
     const existingRoom = await this.getRoomInfo()
@@ -394,6 +435,7 @@ class RoomBase extends ReadyResource {
     try {
       return await this.base.view.get('@roombase/drive-metadata', { id: this.roomId });
     } catch (err) {
+      writeFileSync('./getDriveMeta', JSON.stringify(err.message))
       return null;
     }
   }
@@ -415,6 +457,11 @@ class RoomBase extends ReadyResource {
         this.store.replicate(connection)
       })
     }
+
+
+
+
+
 
     this.pairing = new BlindPairing(this.swarm)
     this.member = this.pairing.addMember({
@@ -439,6 +486,7 @@ class RoomBase extends ReadyResource {
       }
     })
     this.swarm.join(this.base.discoveryKey)
+    await this._setupDriveReplication()
   }
 
   async createInvite(opts = {}) {
@@ -652,34 +700,210 @@ class RoomBase extends ReadyResource {
     return writers;
   }
 
+  async isDownloaded(path) {
+    if (!this.drive) return false;
+
+    try {
+      return await this.drive.has(path);
+    } catch (err) {
+      console.error(`Error checking if ${path} is downloaded:`, err);
+      return false;
+    }
+  }
+
+  async getDriveSyncStatus() {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      // Get drive stats
+      const length = this.drive.length;
+      const version = this.drive.version;
+
+      // Get peer count from swarm
+      let peerCount = 0;
+      if (this.swarm) {
+        peerCount = this.swarm.connections.size;
+      }
+
+      // Estimate drive size by checking a sample of entries
+      const rootEntries = await this.getFiles('/', { recursive: false });
+
+      return {
+        key: this.driveKey,
+        length,
+        version,
+        peerCount,
+        rootFolders: rootEntries.filter(e => e.isDirectory).length,
+        rootFiles: rootEntries.filter(e => !e.isDirectory).length,
+        lastUpdated: Date.now()
+      };
+    } catch (err) {
+      console.error('Error getting drive sync status:', err);
+      return {
+        key: this.driveKey,
+        error: err.message,
+        lastUpdated: Date.now()
+      };
+    }
+  }
+
+  async findDrivePeers() {
+    if (!this.drive || !this.swarm) return false;
+
+    try {
+      // Creating "finding peers" promise as per Hyperdrive docs
+      const done = this.drive.findingPeers();
+
+      // Join the swarm with the drive's discovery key
+      const discovery = this.swarm.join(this.drive.discoveryKey);
+
+      // Wait for the topic to be fully announced
+      await discovery.flushed();
+
+      // Wait for connections to be established
+      await this.swarm.flush();
+
+      // Let Hyperdrive know we're done finding peers
+      done();
+
+      return true;
+    } catch (err) {
+      console.error('Error finding drive peers:', err);
+      return false;
+    }
+  }
+
+  async updateDrive() {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      // First find peers
+      await this.findDrivePeers();
+
+      // Then update with wait option
+      const updated = await this.drive.update({ wait: true });
+
+      return updated;
+    } catch (err) {
+      console.error('Error updating drive:', err);
+      return false;
+    }
+  }
+
+  async getDownloadStatus(path) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      const entry = await this.drive.entry(path);
+      if (!entry) throw new Error(`Entry not found: ${path}`);
+
+      const isDirectory = !entry.value.blob;
+
+      if (isDirectory) {
+        // For directories, check all entries
+        const entries = await this.getFiles(path, { recursive: true });
+        let totalFiles = 0;
+        let downloadedFiles = 0;
+
+        for (const entry of entries) {
+          if (!entry.isDirectory) {
+            totalFiles++;
+            if (await this.drive.has(entry.path)) {
+              downloadedFiles++;
+            }
+          }
+        }
+
+        return {
+          path,
+          isDirectory: true,
+          totalFiles,
+          downloadedFiles,
+          percentage: totalFiles > 0 ? Math.round((downloadedFiles / totalFiles) * 100) : 100
+        };
+      } else {
+        // For single files
+        const downloaded = await this.drive.has(path);
+        return {
+          path,
+          isDirectory: false,
+          downloaded,
+          percentage: downloaded ? 100 : 0
+        };
+      }
+    } catch (err) {
+      console.error(`Error getting download status for ${path}:`, err);
+      return {
+        path,
+        error: err.message,
+        downloaded: false,
+        percentage: 0
+      };
+    }
+  }
+
   async getFiles(directory = '/', options = {}) {
     if (!this.drive) throw new Error('Drive not initialized');
 
-    const { recursive = false, limit = 50 } = options;
+    const { recursive = false, limit = 50, includeStats = true } = options;
 
     try {
+      // Ensure directory path ends with /
+      const dirPath = directory.endsWith('/') ? directory : directory + '/';
+
       const fileEntries = [];
-      const stream = this.drive.list(directory, { recursive });
+      const stream = this.drive.list(dirPath, { recursive });
 
       for await (const entry of stream) {
-        // Skip the .keep files used for directory structure
-        if (entry.key.endsWith('/.keep')) continue;
+        // Skip the dotfiles used for directory structure
+        if (path.basename(entry.key).startsWith('.')) continue;
 
-        // Add additional metadata
+        // Extract path info
+        const relativePath = entry.key.startsWith(dirPath)
+          ? entry.key.slice(dirPath.length)
+          : entry.key;
+
+        // Skip empty entries
+        if (!relativePath && entry.key !== dirPath) continue;
+
+        // Determine if entry is a directory (no blob means directory)
+        const isDirectory = !entry.value.blob;
+
+        // Add enhanced metadata
         const entryWithMetadata = {
           ...entry,
           path: entry.key,
-          isDirectory: !entry.value.blob,
+          relativePath,
+          name: path.basename(entry.key),
+          isDirectory,
           size: entry.value.blob ? entry.value.blob.byteLength : 0,
-          createdAt: Date.now()
+          createdAt: Date.now() // Hyperdrive doesn't store creation timestamps
         };
+
+        // Get additional stats if requested
+        if (includeStats && !isDirectory) {
+          try {
+            // Get entry stats if available
+            const blobInfo = entry.value.blob;
+            if (blobInfo) {
+              entryWithMetadata.byteLength = blobInfo.byteLength;
+            }
+          } catch (statErr) {
+            console.error(`Error getting stats for ${entry.key}:`, statErr);
+          }
+        }
 
         fileEntries.push(entryWithMetadata);
 
         if (fileEntries.length >= limit) break;
       }
 
-      return fileEntries;
+      // Sort entries: directories first, then files alphabetically
+      return fileEntries.sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
     } catch (err) {
       console.error(`Error listing files from ${directory}:`, err);
       return [];
@@ -690,9 +914,19 @@ class RoomBase extends ReadyResource {
     if (!this.drive) throw new Error('Drive not initialized');
 
     try {
-      if (this.driveWatcher) this.driveWatcher.destroy();
+      // Clean up existing watcher if present
+      if (this.driveWatcher) {
+        this.driveWatcher.destroy();
+      }
 
-      this.driveWatcher = this.drive.watch(directory);
+      // Normalize directory path
+      const dirPath = directory.endsWith('/') ? directory : directory + '/';
+
+      // Create watcher - this returns an async iterator
+      // Usage: for await (const [curr, prev] of watcher) { ... }
+      this.driveWatcher = this.drive.watch(dirPath);
+
+      // Make watcher available
       return this.driveWatcher;
     } catch (err) {
       console.error(`Error watching directory ${directory}:`, err);
@@ -700,103 +934,127 @@ class RoomBase extends ReadyResource {
     }
   }
 
-  async uploadFile(data, path, options = {}) {
+  async uploadFile(data, filePath, options = {}) {
     if (!this.drive) {
-      writeFileSync('./fileUpload', 'nvl')
+      console.error('Drive not initialized');
       return null;
     }
 
     try {
       // Normalize path to ensure it's a valid hyperdrive path
-      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-      console.log(`Uploading file to path: ${normalizedPath}, size: ${data.length} bytes`);
+      const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
 
-      // Make sure parent directory exists
-      const dirPath = normalizedPath.split('/').slice(0, -1).join('/');
-      if (dirPath && dirPath !== '/') {
-        try {
-          // Create parent directories if they don't exist
-          const exists = await this.drive.exists(dirPath);
-          if (!exists) {
-            console.log(`Creating parent directory: ${dirPath}`);
-            await this.createDirectory(dirPath);
-          }
-        } catch (dirErr) {
-          console.error(`Error checking/creating directory ${dirPath}:`, dirErr);
-          // Continue anyway - the put might still work
-        }
-      }
+      // // Extract directory path and ensure it exists
+      // const dirPath = path.dirname(normalizedPath);
+      // if (dirPath && dirPath !== '/') {
+      //   // Create parent directories if they don't exist
+      //   const exists = await this.directoryExists(dirPath);
+      //   if (!exists) {
+      //     await this.createDirectory(dirPath);
+      //   }
+      // }
 
-      console.log(`Calling drive.put with path: ${normalizedPath}`);
-      await this.drive.put(normalizedPath + Date.now() + '_' + Math.ceil(Math.random() * 100), data, options);
-      console.log(`File upload to ${normalizedPath} successful`);
+      // Set metadata if provided
+      const metadata = options.metadata || null;
+      const executable = options.executable || false;
+
+      // Prepare options for put
+      const putOptions = {
+        metadata,
+        executable
+      };
+
+      // Upload file to drive
+      await this.drive.put(normalizedPath, data, putOptions);
+
+      // Get entry to return accurate metadata
+      const entry = await this.drive.entry(normalizedPath);
 
       // Return file metadata
       return {
         path: normalizedPath,
+        name: path.basename(normalizedPath),
         size: data.length,
-        name: normalizedPath.split('/').pop()
+        byteLength: entry?.value?.blob?.byteLength || data.length,
+        metadata: metadata,
+        executable: executable,
+        timestamp: Date.now()
       };
     } catch (err) {
-      console.error(`Error in RoomBase.uploadFile to ${path}:`, err);
+      console.error(`Error uploading file to ${filePath}:`, err);
       if (err.stack) console.error(err.stack);
       return null;
     }
   }
 
-  async downloadFile(path, options = {}) {
+  async downloadFile(filePath, options = {}) {
     if (!this.drive) throw new Error('Drive not initialized');
 
-    const { maxSize = 1024 * 1024 } = options; // Default to 1MB max
+    const { maxSize = 10 * 1024 * 1024, timeout = 30000 } = options; // Default to 10MB max, 30s timeout
 
     try {
-      const fileExists = await this.drive.exists(path);
-      if (!fileExists) throw new Error(`File does not exist: ${path}`);
+      // Check if file exists
+      const fileExists = await this.drive.exists(filePath);
+      if (!fileExists) throw new Error(`File does not exist: ${filePath}`);
 
-      // Get file size before downloading
-      const entry = await this.drive.entry(path);
+      // Get file entry to determine size
+      const entry = await this.drive.entry(filePath);
       if (!entry) throw new Error('Unable to get file entry');
 
       const fileSize = entry.value?.blob?.byteLength || 0;
 
-      // For very large files, implement chunked download or warn user
+      // For very large files, implement chunked download
       if (fileSize > maxSize) {
         console.warn(`Large file detected (${fileSize} bytes). Loading first ${maxSize} bytes.`);
 
         // Create a read stream with limits
-        const stream = this.drive.createReadStream(path, {
+        const stream = this.drive.createReadStream(filePath, {
           start: 0,
-          end: maxSize - 1
+          end: maxSize - 1,
+          wait: true,
+          timeout
         });
 
-        // Collect chunks into a single buffer
+        // Collect chunks into a buffer
         const chunks = [];
         for await (const chunk of stream) {
           chunks.push(chunk);
         }
 
-        // Combine chunks
         const buffer = Buffer.concat(chunks);
         return buffer;
       }
 
-      // For smaller files, get the entire content
-      return await this.drive.get(path);
+      // For smaller files, use get with wait and timeout options
+      return await this.drive.get(filePath, { wait: true, timeout });
     } catch (err) {
-      console.error(`Error downloading file from ${path}:`, err);
+      console.error(`Error downloading file from ${filePath}:`, err);
       return null;
     }
   }
 
-  async createDirectory(path) {
+  async createDirectory(dirPath) {
     if (!this.drive) throw new Error('Drive not initialized');
 
     try {
-      const dirPath = path.endsWith('/') ? path : path + '/';
-      await this.drive.put(dirPath + '.keep', Buffer.from(''));
+      // Normalize path to ensure it ends with /
+      const normalizedPath = dirPath.endsWith('/') ? dirPath : dirPath + '/';
+
+      // According to Hyperdrive documentation, directories are just paths that end with /
+      // We create an empty file to represent the directory
+      const markerPath = normalizedPath + '.hyperdrive-dir';
+
+      // Create the directory marker file
+      await this.drive.put(markerPath, Buffer.from(''), {
+        metadata: {
+          type: 'directory-marker',
+          created: Date.now()
+        }
+      });
+
       return true;
     } catch (err) {
-      console.error(`Error creating directory at ${path}:`, err);
+      console.error(`Error creating directory at ${dirPath}:`, err);
       return false;
     }
   }
@@ -817,20 +1075,62 @@ class RoomBase extends ReadyResource {
     }
   }
 
+  /**
+ * Delete a file or directory from the drive
+ * @param {string} path - Path to delete
+ * @returns {Promise<boolean>} Success status
+ */
+  async deleteFile(filePath) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      // Check if the file exists
+      const exists = await this.drive.exists(filePath);
+      if (!exists) throw new Error(`File not found: ${filePath}`);
+
+      // Get the entry to determine if it's a file or directory
+      const entry = await this.drive.entry(filePath);
+      const isDirectory = !entry?.value?.blob;
+
+      if (isDirectory) {
+        // If it's a directory (path ends with /), delete all contents
+        return await this.deleteDirectory(filePath);
+      } else {
+        // Delete single file
+        await this.drive.del(filePath);
+        return true;
+      }
+    } catch (err) {
+      console.error(`Error deleting ${filePath}:`, err);
+      return false;
+    }
+  }
   async deleteDirectory(dirPath) {
     if (!this.drive) throw new Error('Drive not initialized');
 
     try {
+      // Normalize path to ensure it ends with /
       const normalizedPath = dirPath.endsWith('/') ? dirPath : dirPath + '/';
 
+      // Get all entries in this directory
       const entries = await this.getFiles(normalizedPath, { recursive: true });
 
-      for (const entry of entries) {
-        await this.drive.del(entry.path);
+      // Delete all entries (files first, then directories)
+      // Sort in reverse order to delete deeper paths first
+      const sortedEntries = entries.sort((a, b) => b.path.length - a.path.length);
+
+      for (const entry of sortedEntries) {
+        try {
+          await this.drive.del(entry.path);
+        } catch (err) {
+          console.error(`Error deleting entry ${entry.path}:`, err);
+          // Continue with other entries
+        }
       }
 
+      // Delete the directory marker if it exists
       try {
-        await this.drive.del(normalizedPath + '.keep');
+        await this.drive.del(normalizedPath + '.hyperdrive-dir');
       } catch (e) {
         // Ignore errors if marker doesn't exist
       }
@@ -841,7 +1141,6 @@ class RoomBase extends ReadyResource {
       return false;
     }
   }
-
 
 
   static async joinRoom(store, inviteCode, opts = {}) {

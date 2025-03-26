@@ -737,6 +737,7 @@ export function RoomBaseProvider({ children }) {
       fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
     } catch (err) {
       console.error('Error saving room keys:', err);
+      fs.writeFileSync('./saveErr', JSON.stringify(err.message))
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
     }
   };
@@ -767,7 +768,7 @@ export function RoomBaseProvider({ children }) {
       await store.ready();
 
       const driveStorePath = path.join(ROOMS_DIR, roomId + '_DRIVE');
-      const driveStore = new Corestore(driveStorePath + '/');
+      const driveStore = new Corestore(driveStorePath);
       await driveStore.ready();
       corestores.current.set(roomId + '_STORE', driveStore);
 
@@ -786,7 +787,7 @@ export function RoomBaseProvider({ children }) {
         name: roomName,
         key: room.key.toString('hex'),
         encryptionKey: room.encryptionKey.toString('hex'),
-        driveKey: await room.driveKey
+        driveKey: room.driveKey
       };
 
       // Store the room instance
@@ -799,7 +800,7 @@ export function RoomBaseProvider({ children }) {
         name: roomName,
         key: roomKey.key,
         encryptionKey: roomKey.encryptionKey,
-        driveKey: await room.driveKey,
+        driveKey: room.driveKey,
         messages: [],
         status: 'connected'
       };
