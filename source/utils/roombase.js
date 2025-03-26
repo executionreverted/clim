@@ -10,7 +10,7 @@ import b4a from 'b4a';
 import { Router, dispatch } from './spec/hyperdispatch/index.js'
 import db from './spec/db/index.js';
 import crypto from 'crypto';
-
+import path from 'path'
 import { getEncoding } from './spec/hyperdispatch/messages.js'
 import { writeFileSync } from 'fs';
 
@@ -286,34 +286,78 @@ class RoomBase extends ReadyResource {
         const driveMetadata = await this._getDriveMetadata();
         if (driveMetadata && driveMetadata.driveKey) {
           this.driveKey = driveMetadata.driveKey;
+          console.log(`Using existing drive key from metadata: ${this.driveKey}`);
         }
+      }
+
+      // Create drive store directory if it doesn't exist
+      if (this.driveStore && !this.driveStore.path) {
+        console.error('Drive store missing path property, this may cause issues');
       }
 
       // Initialize Hyperdrive with key if available
       if (this.driveKey) {
-        // Use existing drive key - convert from hex string to Buffer
-        this.drive = new Hyperdrive(this.driveStore, Buffer.from(this.driveKey, 'hex'));
+        // Convert from hex string to Buffer if needed
+        const driveKeyBuffer = typeof this.driveKey === 'string'
+          ? Buffer.from(this.driveKey, 'hex')
+          : this.driveKey;
+
+        console.log(`Initializing drive with existing key: ${this.driveKey}`);
+        try {
+          this.drive = new Hyperdrive(this.driveStore, driveKeyBuffer);
+        } catch (driveErr) {
+          console.error('Error creating drive with key:', driveErr);
+          // Fall back to creating a new drive
+          this.drive = new Hyperdrive(this.driveStore);
+        }
       } else {
         // Create new drive
+        console.log('Creating new hyperdrive');
         this.drive = new Hyperdrive(this.driveStore);
       }
 
       await this.drive.ready();
+      console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
 
       // If this is a new drive (we didn't have a key before), store the key
       if (!this.driveKey) {
         this.driveKey = this.drive.key.toString('hex');
+        console.log(`New drive created with key: ${this.driveKey}`);
         await this._storeDriveKey();
       }
 
       // Create root folders for better organization
       await this._ensureRootFolders();
+
+      return true;
     } catch (err) {
       console.error('Error initializing drive:', err);
-      throw err;
+      this.drive = null; // Clear reference on failure
+      return false;
     }
   }
 
+  // Helper to ensure root folders exist
+  async _ensureRootFolders() {
+    if (!this.drive) return;
+
+    const rootFolders = ['/files', '/images', '/documents'];
+
+    for (const folder of rootFolders) {
+      try {
+        // Check if folder exists by checking directory marker
+        const exists = await this.drive.exists(folder + '/.hyperdrive-dir');
+
+        if (!exists) {
+          await this.createDirectory(folder);
+          console.log(`Created root folder: ${folder}`);
+        }
+      } catch (err) {
+        console.error(`Error creating root folder ${folder}:`, err);
+        // Continue with other folders
+      }
+    }
+  }
 
   async _setupDriveReplication() {
     if (!this.drive || !this.swarm) return;
@@ -415,7 +459,10 @@ class RoomBase extends ReadyResource {
   }
 
   async _storeDriveKey() {
-    if (!this.driveKey) return;
+    if (!this.driveKey) {
+      console.error('Cannot store null drive key');
+      return false;
+    }
 
     try {
       const metadata = {
@@ -424,10 +471,26 @@ class RoomBase extends ReadyResource {
         createdAt: Date.now()
       };
 
+      console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
       const dispatchData = dispatch('@roombase/set-drive-key', metadata);
       await this.base.append(dispatchData);
+
+      // Also update room metadata with drive key
+      const room = await this.getRoomInfo();
+      if (room) {
+        const updatedRoom = {
+          ...room,
+          driveKey: this.driveKey
+        };
+
+        const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
+        await this.base.append(metadataDispatch);
+      }
+
+      return true;
     } catch (err) {
       console.error('Error storing drive key:', err);
+      return false;
     }
   }
 
@@ -905,6 +968,7 @@ class RoomBase extends ReadyResource {
         return a.name.localeCompare(b.name);
       });
     } catch (err) {
+      writeFileSync('./roombaseloadfiles', JSON.stringify(err.message))
       console.error(`Error listing files from ${directory}:`, err);
       return [];
     }
@@ -934,6 +998,29 @@ class RoomBase extends ReadyResource {
     }
   }
 
+  async directoryExists(path) {
+    if (!this.drive) return false;
+
+    try {
+      // Normalize path to end with / for directory
+      const dirPath = path.endsWith('/') ? path : path + '/';
+
+      // Try to list directory with limit 1
+      const entries = this.drive.list(dirPath, { limit: 1 });
+
+      // If we can get one entry, the directory exists
+      for await (const entry of entries) {
+        return true;
+      }
+
+      // No entries found
+      return false;
+    } catch (err) {
+      // Most likely the directory doesn't exist
+      return false;
+    }
+  }
+
   async uploadFile(data, filePath, options = {}) {
     if (!this.drive) {
       console.error('Drive not initialized');
@@ -944,15 +1031,15 @@ class RoomBase extends ReadyResource {
       // Normalize path to ensure it's a valid hyperdrive path
       const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
 
-      // // Extract directory path and ensure it exists
-      // const dirPath = path.dirname(normalizedPath);
-      // if (dirPath && dirPath !== '/') {
-      //   // Create parent directories if they don't exist
-      //   const exists = await this.directoryExists(dirPath);
-      //   if (!exists) {
-      //     await this.createDirectory(dirPath);
-      //   }
-      // }
+      // Extract directory path and ensure it exists
+      const dirPath = path.dirname(normalizedPath);
+      if (dirPath && dirPath !== '/') {
+        // Create parent directories if they don't exist
+        const exists = await this.directoryExists(dirPath);
+        if (!exists) {
+          await this.createDirectory(dirPath);
+        }
+      }
 
       // Set metadata if provided
       const metadata = options.metadata || null;

@@ -268,6 +268,7 @@ export function RoomBaseProvider({ children }) {
 
       return files;
     } catch (err) {
+      writeFileSync('./loadroomfiles', JSON.stringify(err.message))
       console.error(`Error loading files for room ${roomId}:`, err);
       return [];
     } finally {
@@ -327,12 +328,37 @@ export function RoomBaseProvider({ children }) {
 
     return false;
   };
+
+
+  const saveRoomsToFile = () => {
+    try {
+      // Make sure we extract all necessary properties including driveKey
+      const roomKeys = state.rooms.map(room => ({
+        id: room.id,
+        name: room.name,
+        key: room.key,
+        encryptionKey: room.encryptionKey,
+        driveKey: room.driveKey || null
+      }));
+
+      // Ensure directory exists before trying to write
+      ensureDirectoryExists(path.dirname(ROOMS_FILE));
+
+      // Write file synchronously to ensure it completes
+      fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
+      console.log(`Saved ${roomKeys.length} rooms to ${ROOMS_FILE}`);
+    } catch (err) {
+      console.error('Error saving room keys:', err);
+      dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
+    }
+  }
   // Ensure config directory exists and load identity
   useEffect(() => {
     try {
       // Ensure all required directories exist
       ensureDirectoryExists(CONFIG_DIR);
       ensureDirectoryExists(ROOMS_DIR);
+      ensureDirectoryExists(DRIVE_PATH);
 
       // Load identity
       const identity = loadOrCreateIdentity();
@@ -340,17 +366,42 @@ export function RoomBaseProvider({ children }) {
 
       // Load room keys
       if (fs.existsSync(ROOMS_FILE)) {
-        const roomKeys = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf-8'));
-        initializeRooms(roomKeys);
+        try {
+          const roomKeysStr = fs.readFileSync(ROOMS_FILE, 'utf-8');
+          // Add extra safety with try-catch for JSON parsing
+          try {
+            const roomKeys = JSON.parse(roomKeysStr);
+            console.log(`Found ${roomKeys.length} rooms in storage file`);
+
+            // Initialize rooms with debug logging
+            initializeRooms(roomKeys);
+          } catch (jsonErr) {
+            console.error(`Error parsing room keys JSON: ${jsonErr.message}`);
+            console.error(`Content of file: ${roomKeysStr}`);
+            fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
+          }
+        } catch (readErr) {
+          console.error(`Error reading rooms file: ${readErr.message}`);
+          fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
+        }
       } else {
+        console.log(`No rooms file found, creating empty one at ${ROOMS_FILE}`);
+        // Ensure directory exists before writing file
+        ensureDirectoryExists(path.dirname(ROOMS_FILE));
         fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
       }
     } catch (err) {
+      console.error(`Initialization error:`, err);
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Initialization error: ${err.message}` });
     }
 
     // Cleanup when unmounting
     return () => {
+      // Save rooms before closing
+      if (state.rooms.length > 0) {
+        saveRoomsToFile();
+      }
+
       // Close each room instance and its corestore
       for (const [roomId, room] of roomInstances.current.entries()) {
         room.close().catch(err => {
@@ -579,13 +630,17 @@ export function RoomBaseProvider({ children }) {
         await store.ready();
         corestores.current.set(roomKey.id, store);
 
+        const driveStorePath = path.join(DRIVE_PATH, roomKey.id + '_DRIVE');
+        const driveStore = new Corestore(driveStorePath);
+
+        corestores.current.set(roomKey.id + '_DRIVE', driveStore)
         // Create RoomBase instance with the room-specific corestore
         const room = new RoomBase(store, {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
           roomName: roomKey.name,
-          drivePath: DRIVE_PATH
+          driveStore: driveStore
         });
 
         await room.ready();
@@ -639,6 +694,8 @@ export function RoomBaseProvider({ children }) {
             }
           });
         } catch (msgErr) {
+
+          writeFileSync('./joinerr2', JSON.stringify(msgErr.message))
           console.error(`Error retrieving messages for room ${roomKey.id}:`, msgErr);
         }
 
@@ -724,32 +781,34 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
-  // Save room keys to file
-  const saveRoomsToFile = () => {
-    try {
-      const roomKeys = state.rooms.map(room => ({
-        id: room.id,
-        name: room.name,
-        key: room.key,
-        encryptionKey: room.encryptionKey,
-        driveKey: room.driveKey
-      }));
-      fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
-    } catch (err) {
-      console.error('Error saving room keys:', err);
-      fs.writeFileSync('./saveErr', JSON.stringify(err.message))
-      dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
-    }
-  };
 
   // Save rooms to file when they change
   useEffect(() => {
+    // Only save if we have rooms
     if (state.rooms.length > 0) {
-      saveRoomsToFile();
-    }
-  }, [state.rooms.length, state.rooms.map(r => r.id).join(',')]);
+      try {
+        const roomKeys = state.rooms.map(room => ({
+          id: room.id,
+          name: room.name,
+          key: room.key,
+          encryptionKey: room.encryptionKey,
+          driveKey: room.driveKey
+        }));
 
-  // Function to create a new room
+        // Ensure directory exists
+        if (!fs.existsSync(path.dirname(ROOMS_FILE))) {
+          fs.mkdirSync(path.dirname(ROOMS_FILE), { recursive: true });
+        }
+
+        // Save rooms to file
+        fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
+        console.log(`Saved ${roomKeys.length} rooms to ${ROOMS_FILE}`);
+      } catch (err) {
+        console.error('Error saving room keys:', err);
+        dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
+      }
+    }
+  }, [state.rooms]);  // Function to create a new room
   const createRoom = async (name) => {
     if (!name || name.trim() === '') {
       return null;
@@ -767,7 +826,7 @@ export function RoomBaseProvider({ children }) {
       const store = new Corestore(roomStorePath);
       await store.ready();
 
-      const driveStorePath = path.join(ROOMS_DIR, roomId + '_DRIVE');
+      const driveStorePath = path.join(DRIVE_PATH, roomId + '_DRIVE');
       const driveStore = new Corestore(driveStorePath);
       await driveStore.ready();
       corestores.current.set(roomId + '_STORE', driveStore);
@@ -844,7 +903,7 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
-        const driveStorePath = path.join(ROOMS_DIR, roomId + '_DRIVE');
+        const driveStorePath = path.join(DRIVE_PATH, roomId + '_DRIVE');
         const driveStore = new Corestore(driveStorePath + '/');
         await driveStore.ready();
 
