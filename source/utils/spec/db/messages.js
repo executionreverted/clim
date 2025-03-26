@@ -55,18 +55,46 @@ const encoding1 = {
   }
 }
 
-// @roombase/metadata
+// @roombase/drive-metadata
 const encoding2 = {
+  preencode (state, m) {
+    c.string.preencode(state, m.id)
+    c.string.preencode(state, m.driveKey)
+    c.int.preencode(state, m.createdAt)
+  },
+  encode (state, m) {
+    c.string.encode(state, m.id)
+    c.string.encode(state, m.driveKey)
+    c.int.encode(state, m.createdAt)
+  },
+  decode (state) {
+    const r0 = c.string.decode(state)
+    const r1 = c.string.decode(state)
+    const r2 = c.int.decode(state)
+
+    return {
+      id: r0,
+      driveKey: r1,
+      createdAt: r2
+    }
+  }
+}
+
+// @roombase/metadata
+const encoding3 = {
   preencode (state, m) {
     c.string.preencode(state, m.id)
     c.string.preencode(state, m.name)
     c.int.preencode(state, m.createdAt)
-    state.end++ // max flag is 1 so always one byte
+    state.end++ // max flag is 2 so always one byte
 
     if (m.messageCount) c.int.preencode(state, m.messageCount)
+    if (m.driveKey) c.string.preencode(state, m.driveKey)
   },
   encode (state, m) {
-    const flags = m.messageCount ? 1 : 0
+    const flags =
+      (m.messageCount ? 1 : 0) |
+      (m.driveKey ? 2 : 0)
 
     c.string.encode(state, m.id)
     c.string.encode(state, m.name)
@@ -74,6 +102,7 @@ const encoding2 = {
     c.uint.encode(state, flags)
 
     if (m.messageCount) c.int.encode(state, m.messageCount)
+    if (m.driveKey) c.string.encode(state, m.driveKey)
   },
   decode (state) {
     const r0 = c.string.decode(state)
@@ -85,13 +114,14 @@ const encoding2 = {
       id: r0,
       name: r1,
       createdAt: r2,
-      messageCount: (flags & 1) !== 0 ? c.int.decode(state) : 0
+      messageCount: (flags & 1) !== 0 ? c.int.decode(state) : 0,
+      driveKey: (flags & 2) !== 0 ? c.string.decode(state) : null
     }
   }
 }
 
 // @roombase/messages
-const encoding3 = {
+const encoding4 = {
   preencode (state, m) {
     c.string.preencode(state, m.id)
     c.string.preencode(state, m.content)
@@ -129,7 +159,7 @@ const encoding3 = {
 }
 
 // @roombase/writer/hyperdb#0
-const encoding4 = {
+const encoding5 = {
   preencode (state, m) {
 
   },
@@ -144,7 +174,7 @@ const encoding4 = {
 }
 
 // @roombase/invite/hyperdb#1
-const encoding5 = {
+const encoding6 = {
   preencode (state, m) {
     c.buffer.preencode(state, m.invite)
     c.buffer.preencode(state, m.publicKey)
@@ -169,23 +199,49 @@ const encoding5 = {
   }
 }
 
-// @roombase/metadata/hyperdb#2
-const encoding6 = {
+// @roombase/drive-metadata/hyperdb#2
+const encoding7 = {
+  preencode (state, m) {
+    c.string.preencode(state, m.driveKey)
+    c.int.preencode(state, m.createdAt)
+  },
+  encode (state, m) {
+    c.string.encode(state, m.driveKey)
+    c.int.encode(state, m.createdAt)
+  },
+  decode (state) {
+    const r1 = c.string.decode(state)
+    const r2 = c.int.decode(state)
+
+    return {
+      id: null,
+      driveKey: r1,
+      createdAt: r2
+    }
+  }
+}
+
+// @roombase/metadata/hyperdb#3
+const encoding8 = {
   preencode (state, m) {
     c.string.preencode(state, m.name)
     c.int.preencode(state, m.createdAt)
-    state.end++ // max flag is 1 so always one byte
+    state.end++ // max flag is 2 so always one byte
 
     if (m.messageCount) c.int.preencode(state, m.messageCount)
+    if (m.driveKey) c.string.preencode(state, m.driveKey)
   },
   encode (state, m) {
-    const flags = m.messageCount ? 1 : 0
+    const flags =
+      (m.messageCount ? 1 : 0) |
+      (m.driveKey ? 2 : 0)
 
     c.string.encode(state, m.name)
     c.int.encode(state, m.createdAt)
     c.uint.encode(state, flags)
 
     if (m.messageCount) c.int.encode(state, m.messageCount)
+    if (m.driveKey) c.string.encode(state, m.driveKey)
   },
   decode (state) {
     const r1 = c.string.decode(state)
@@ -196,13 +252,14 @@ const encoding6 = {
       id: null,
       name: r1,
       createdAt: r2,
-      messageCount: (flags & 1) !== 0 ? c.int.decode(state) : 0
+      messageCount: (flags & 1) !== 0 ? c.int.decode(state) : 0,
+      driveKey: (flags & 2) !== 0 ? c.string.decode(state) : null
     }
   }
 }
 
-// @roombase/messages/hyperdb#3
-const encoding7 = {
+// @roombase/messages/hyperdb#4
+const encoding9 = {
   preencode (state, m) {
     c.string.preencode(state, m.content)
     c.string.preencode(state, m.sender)
@@ -260,12 +317,14 @@ function getEncoding (name) {
   switch (name) {
     case '@roombase/writer': return encoding0
     case '@roombase/invite': return encoding1
-    case '@roombase/metadata': return encoding2
-    case '@roombase/messages': return encoding3
-    case '@roombase/writer/hyperdb#0': return encoding4
-    case '@roombase/invite/hyperdb#1': return encoding5
-    case '@roombase/metadata/hyperdb#2': return encoding6
-    case '@roombase/messages/hyperdb#3': return encoding7
+    case '@roombase/drive-metadata': return encoding2
+    case '@roombase/metadata': return encoding3
+    case '@roombase/messages': return encoding4
+    case '@roombase/writer/hyperdb#0': return encoding5
+    case '@roombase/invite/hyperdb#1': return encoding6
+    case '@roombase/drive-metadata/hyperdb#2': return encoding7
+    case '@roombase/metadata/hyperdb#3': return encoding8
+    case '@roombase/messages/hyperdb#4': return encoding9
     default: throw new Error('Encoder not found ' + name)
   }
 }

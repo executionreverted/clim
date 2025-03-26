@@ -1,6 +1,6 @@
 // contexts/RoomBaseChatContext.js
 import clipboard from 'clipboardy';
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import React, { useState, createContext, useContext, useReducer, useCallback } from 'react';
 import { getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
 
@@ -93,7 +93,17 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     roomConnections,
     error,
     loadMoreMessages,
-    messageCounts
+    messageCounts,
+
+    files,
+    fileLoading,
+    currentDirectory,
+    loadRoomFiles,
+    uploadFile,
+    downloadFile,
+    deleteFile,
+    createDirectory,
+    navigateDirectory
   } = useRoomBase();
 
   const {
@@ -103,6 +113,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     showFileExplorer
   } = state;
 
+  const [showRoomFiles, setShowRoomFiles] = useState(false);
   // Get chat keybindings for reference
   const chatBindings = getBindingsForContext('chat');
 
@@ -126,6 +137,13 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
   // Handle input submission
   const handleInputSubmit = useCallback((localInputVal) => {
     if (!localInputVal || !localInputVal.trim()) return true;
+
+    if (localInputVal.trim() === '/files') {
+      setInputValue('');
+      setShowRoomFiles(true);
+      return true;
+    }
+
 
     // Check for commands first
     if (localInputVal.trim() === '/send') {
@@ -232,7 +250,9 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     leaveRoom,
     setInputValue,
     createInviteCode,
-    updateProfile
+    setShowRoomFiles,
+    updateProfile,
+    showRoomFiles
   ]);
 
   // Handle file selection for message attachments
@@ -317,7 +337,19 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
     // Additional from RoomBase
     peers,
-    roomConnections
+    roomConnections,
+
+    files,
+    fileLoading,
+    currentDirectory,
+    loadRoomFiles,
+    uploadFile,
+    downloadFile,
+    deleteFile,
+    createDirectory,
+    navigateDirectory,
+    showRoomFiles,
+    setShowRoomFiles
   };
 
   return (

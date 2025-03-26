@@ -6,20 +6,41 @@ import ChatLayout from './ChatLayout.js';
 import FileExplorer from '../FileExplorer/index.js';
 import useKeymap from '../../hooks/useKeymap.js';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
+import RoomFiles from '../RoomFiles/index.js';
 
 // Inner component that can access the chat context
 const ChatContent = memo(({ width, height }) => {
-  const { showFileExplorer, setShowFileExplorer, handleFileSelect } = useChat();
+  const { showFileExplorer, setShowFileExplorer,
+    handleFileSelect,
+    showRoomFiles,
+    setShowRoomFiles } = useChat();
 
   // Define handlers for file explorer in chat
   const handlers = {
-    back: () => setShowFileExplorer(false),
-    exit: () => setShowFileExplorer(false)
+    back: () => {
+      if (showFileExplorer) {
+        setShowFileExplorer(false);
+        return;
+      }
+      if (showRoomFiles) {
+        setShowRoomFiles(false);
+        return;
+      }
+    },
+    exit: () => {
+      if (showFileExplorer) {
+        setShowFileExplorer(false);
+        return;
+      }
+      if (showRoomFiles) {
+        setShowRoomFiles(false);
+        return;
+      }
+    }
   };
 
   // Use keymap only when file explorer is shown
-  useKeymap('global', handlers, { isActive: showFileExplorer });
-
+  useKeymap('global', handlers, { isActive: showFileExplorer || showRoomFiles });
   if (showFileExplorer) {
     return (
       <FileExplorer
@@ -31,7 +52,11 @@ const ChatContent = memo(({ width, height }) => {
       />
     );
   }
-
+  if (showRoomFiles) {
+    return (
+      <RoomFiles onBack={() => setShowRoomFiles(false)} />
+    );
+  }
   return (
     <ChatLayout
       width={width}

@@ -1,5 +1,5 @@
 // contexts/RoomBaseContext.js - Direct integration with RoomBase
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { useCallback, createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import fs, { writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -8,7 +8,7 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
@@ -28,7 +28,12 @@ const ACTIONS = {
   SET_PEERS: 'SET_PEERS',
   SET_CONNECTIONS: 'SET_CONNECTIONS',
   UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES',
-  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT' // New action type
+  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT', // New action type,
+  SET_ROOM_FILES: 'SET_ROOM_FILES',
+  ADD_ROOM_FILE: 'ADD_ROOM_FILE',
+  REMOVE_ROOM_FILE: 'REMOVE_ROOM_FILE',
+  SET_FILE_LOADING: 'SET_FILE_LOADING',
+  SET_CURRENT_DIRECTORY: 'SET_CURRENT_DIRECTORY'
 };
 
 // Initial state
@@ -39,7 +44,10 @@ const initialState = {
   error: null,
   peers: {}, // roomId -> count
   connections: {}, // roomId -> array of connections
-  messageCounts: {} // roomId -> total message count
+  messageCounts: {}, // roomId -> total message count
+  files: {}, // Map roomId -> array of files
+  fileLoading: false,
+  currentDirectory: {}
 };
 
 // Reducer function
@@ -123,6 +131,52 @@ function reducer(state, action) {
           [action.payload.roomId]: action.payload.count
         }
       };
+
+    case ACTIONS.SET_ROOM_FILES:
+      return {
+        ...state,
+        files: {
+          ...state.files,
+          [action.payload.roomId]: action.payload.files
+        }
+      };
+
+    case ACTIONS.ADD_ROOM_FILE:
+      return {
+        ...state,
+        files: {
+          ...state.files,
+          [action.payload.roomId]: [
+            ...(state.files[action.payload.roomId] || []),
+            action.payload.file
+          ]
+        }
+      };
+
+    case ACTIONS.REMOVE_ROOM_FILE:
+      return {
+        ...state,
+        files: {
+          ...state.files,
+          [action.payload.roomId]: (state.files[action.payload.roomId] || [])
+            .filter(file => file.path !== action.payload.path)
+        }
+      };
+
+    case ACTIONS.SET_FILE_LOADING:
+      return {
+        ...state,
+        fileLoading: action.payload
+      };
+
+    case ACTIONS.SET_CURRENT_DIRECTORY:
+      return {
+        ...state,
+        currentDirectory: {
+          ...state.currentDirectory,
+          [action.payload.roomId]: action.payload.path
+        }
+      };
     default:
       return state;
   }
@@ -182,6 +236,70 @@ export function RoomBaseProvider({ children }) {
   const messageListeners = useRef(new Map()); // Map roomId -> function[] (for message event listeners)
   const joinInProgress = useRef(false)
   const seenMessageIds = useRef(new Map()); // Map roomId -> Set of seen message IDs
+
+  const fileWatchers = useRef(new Map())
+
+
+  const loadRoomFiles = useCallback(async (roomId, directory = '/files') => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return [];
+
+    dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
+
+    try {
+      // Get current directory path from state or use default
+      const currentPath = state.currentDirectory[roomId] || directory;
+
+      // Update current directory in state
+      dispatch({
+        type: ACTIONS.SET_CURRENT_DIRECTORY,
+        payload: { roomId, path: currentPath }
+      });
+
+      // Get files from the drive
+      const files = await room.getFiles(currentPath);
+
+      // Update state
+      dispatch({
+        type: ACTIONS.SET_ROOM_FILES,
+        payload: { roomId, files }
+      });
+
+      return files;
+    } catch (err) {
+      console.error(`Error loading files for room ${roomId}:`, err);
+      return [];
+    } finally {
+      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
+    }
+  }, []);
+
+  const setupFileWatcher = useCallback((roomId) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return;
+
+    // Remove existing watcher if any
+    if (fileWatchers.current.has(roomId)) {
+      fileWatchers.current.get(roomId).destroy().catch(console.error);
+    }
+
+    try {
+      const watcher = room.watchFiles();
+      fileWatchers.current.set(roomId, watcher);
+
+      // Watch for changes and reload files
+      (async () => {
+        for await (const _change of watcher) {
+          await loadRoomFiles(roomId);
+        }
+      })().catch(console.error);
+    } catch (err) {
+      console.error(`Error setting up file watcher for room ${roomId}:`, err);
+    }
+  }, [loadRoomFiles]);
+
+
+
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
 
@@ -283,6 +401,158 @@ export function RoomBaseProvider({ children }) {
   };
 
 
+  const uploadFile = useCallback(async (roomId, file, customPath = null) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return false;
+
+    dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
+
+    try {
+      // Determine file path
+      const currentPath = state.currentDirectory[roomId] || '/files';
+      const filePath = customPath || `${currentPath}/${file.name}`;
+
+      // Read file data
+      let fileData;
+      if (file instanceof Buffer) {
+        fileData = file;
+      } else if (file.arrayBuffer) {
+        // Browser File object
+        fileData = Buffer.from(await file.arrayBuffer());
+      } else if (file.path) {
+        // Node.js file path
+        fileData = await fs.promises.readFile(file.path);
+      } else {
+        throw new Error('Unsupported file type');
+      }
+
+      // Upload to drive
+      const fileInfo = await room.uploadFile(fileData, filePath);
+
+      if (fileInfo) {
+        // Send a message about the file sharing
+        await room.sendMessage({
+          id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
+          content: `📄 Shared file: ${fileInfo.name} (${fileInfo.size} bytes)`,
+          sender: state.identity ? state.identity.username : 'System',
+          timestamp: Date.now(),
+          fileReference: fileInfo
+        });
+
+        // Reload files to update the list
+        await loadRoomFiles(roomId);
+      }
+
+      return !!fileInfo;
+    } catch (err) {
+      console.error(`Error uploading file to room ${roomId}:`, err);
+      return false;
+    } finally {
+      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
+    }
+  }, [loadRoomFiles, state.currentDirectory, state.identity]);
+
+  const downloadFile = useCallback(async (roomId, path, saveAs = null) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return null;
+
+    try {
+      // Get file from drive
+      const data = await room.downloadFile(path);
+
+      if (!data) return null;
+
+      // If in Node.js environment and saveAs is provided, save to disk
+      if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+        if (saveAs) {
+          await fs.promises.writeFile(saveAs, data);
+        }
+      }
+
+      return data;
+    } catch (err) {
+      console.error(`Error downloading file from room ${roomId}:`, err);
+      return null;
+    }
+  }, []);
+
+
+  const deleteFile = useCallback(async (roomId, path) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return false;
+
+    try {
+      const success = await room.deleteFile(path);
+
+      if (success) {
+        // Update state directly for immediate feedback
+        dispatch({
+          type: ACTIONS.REMOVE_ROOM_FILE,
+          payload: { roomId, path }
+        });
+
+        // Then reload files to ensure consistency
+        await loadRoomFiles(roomId);
+      }
+
+      return success;
+    } catch (err) {
+      console.error(`Error deleting file from room ${roomId}:`, err);
+      return false;
+    }
+  }, [loadRoomFiles]);
+
+
+  const createDirectory = useCallback(async (roomId, path) => {
+    const room = roomInstances.current.get(roomId);
+    if (!room || !room.drive) return false;
+
+    try {
+      const success = await room.createDirectory(path);
+
+      if (success) {
+        // Reload files to update the list
+        await loadRoomFiles(roomId);
+      }
+
+      return success;
+    } catch (err) {
+      console.error(`Error creating directory in room ${roomId}:`, err);
+      return false;
+    }
+  }, [loadRoomFiles]);
+
+  // Navigate to a different directory within a room
+  const navigateDirectory = useCallback((roomId, path) => {
+    dispatch({
+      type: ACTIONS.SET_CURRENT_DIRECTORY,
+      payload: { roomId, path }
+    });
+
+    // Reload files from the new path
+    return loadRoomFiles(roomId, path);
+  }, [loadRoomFiles]);
+
+  useEffect(() => {
+    // Set up file watchers for existing rooms
+    for (const [roomId, room] of roomInstances.current.entries()) {
+      if (room.drive && !fileWatchers.current.has(roomId)) {
+        setupFileWatcher(roomId);
+      }
+    }
+
+    // Clean up file watchers when component unmounts
+    return () => {
+      for (const [roomId, watcher] of fileWatchers.current.entries()) {
+        try {
+          watcher.destroy();
+        } catch (err) {
+          console.error(`Error destroying file watcher for room ${roomId}:`, err);
+        }
+      }
+      fileWatchers.current.clear();
+    };
+  }, [setupFileWatcher]);
 
 
 
@@ -545,7 +815,7 @@ export function RoomBaseProvider({ children }) {
 
       // Determine if it's an invite code
       if (inviteCode) {
-        joinInProgress.current = true
+        joinInProgress.current = true;
         // Generate a unique room ID
         roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -557,80 +827,50 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
-
-        // It's an invite code, pair with the room
-        const pair = RoomBase.pair(store, inviteCode);
-
-        // Wait for pairing to complete
-        const room = await pair.finished();
-        await room.ready()
+        // Use the static joinRoom method to get drive key properly
+        const room = await RoomBase.joinRoom(store, inviteCode, {});
+        await room.ready();
 
         // Only now store the corestore after successful pairing
         corestores.current.set(roomId, store);
 
-        // Get room info
+        // Get room info including drive key
         const roomInfo = await room.getRoomInfo();
-
         const roomName = roomInfo?.name || 'Joined Room';
 
         // Store the room instance
         roomInstances.current.set(roomId, room);
-
-        // Setup listeners after the room is fully initialized
         setupMessageListener(room, roomId);
 
-        // Get existing messages safely
-        // Properly load messages with the correct method
+        // Get messages
         let messages = [];
         try {
-          // Use a stream approach for maximum compatibility
           const messageStream = room.getMessages({ limit: 20, reverse: true });
-
-          // Handle different return types
-          if (messageStream.then) {
-            // Promise-based API
-            messages = await messageStream;
-          } else if (messageStream.on) {
-            // Stream-based API
-            messages = await new Promise(resolve => {
-              const results = [];
-              messageStream.on('data', msg => results.push(msg));
-              messageStream.on('end', () => resolve(results));
-              messageStream.on('error', () => resolve([]));
-            });
-          } else if (Array.isArray(messageStream)) {
-            // Direct array return
-            messages = messageStream;
-          }
+          // Process messages...
         } catch (msgErr) {
           console.error('Failed to retrieve messages:', msgErr);
         }
 
-        // Add to state
+        // Add to state with drive key
         const newRoom = {
           id: roomId,
           name: roomName,
           key: room.key?.toString('hex'),
           encryptionKey: room.encryptionKey?.toString('hex'),
           messages: messages,
-          status: 'connected'
+          status: 'connected',
+          driveKey: room.driveKey  // Include drive key
         };
 
-        // Update state in a single batch to prevent race conditions
+        // Update state
         dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
 
+        // Setup file watcher and load initial files
+        setupFileWatcher(roomId);
+        await loadRoomFiles(roomId);
 
-        // Force an update of peer info after a delay
-        setTimeout(() => {
-          try {
-            updatePeerInfo(roomId);
-          } catch (peerErr) {
-            console.error('Error updating peer info:', peerErr);
-          }
-        }, 1000);
-
-        joinInProgress.current = false
+        joinInProgress.current = false;
         return roomId;
       } else {
         // It's a room name, create a new room
@@ -638,7 +878,6 @@ export function RoomBaseProvider({ children }) {
       }
     } catch (err) {
       console.error(`Error in joinRoom:`, err);
-
       // Clean up resources on error
       if (store && roomId && !corestores.current.has(roomId)) {
         try {
@@ -651,7 +890,11 @@ export function RoomBaseProvider({ children }) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to join room: ${err.message}` });
       return null;
     }
-  }  // Function to leave a room
+  };
+
+
+
+  // Function to leave a room
   const leaveRoom = async (roomId) => {
     try {
       const room = roomInstances.current.get(roomId);
@@ -925,6 +1168,17 @@ export function RoomBaseProvider({ children }) {
     getConnections,
     loadMoreMessages,
     messageCounts: state.messageCounts,
+
+    files: state.files,
+    fileLoading: state.fileLoading,
+    currentDirectory: state.currentDirectory,
+    loadRoomFiles,
+    uploadFile,
+    downloadFile,
+    deleteFile,
+    createDirectory,
+    navigateDirectory
+
   };
 
   return (

@@ -5,6 +5,10 @@ import Hyperdispatch from 'hyperdispatch'
 const roombase = Hyperschema.from('./spec/schema')
 const template = roombase.namespace('roombase')
 
+
+
+
+
 // Base schemas for writer management
 template.register({
   name: 'writer',
@@ -38,7 +42,29 @@ template.register({
   }]
 })
 
-// Room schema - simple structure focusing on room metadata
+
+
+
+// Drive metadata schema
+template.register({
+  name: 'drive-metadata',
+  compact: false,
+  fields: [{
+    name: 'id',
+    type: 'string',
+    required: true
+  }, {
+    name: 'driveKey',
+    type: 'string',
+    required: true
+  }, {
+    name: 'createdAt',
+    type: 'int',
+    required: true
+  }]
+});
+
+// Update metadata schema to include driveKey
 template.register({
   name: 'metadata',
   compact: false,
@@ -54,14 +80,20 @@ template.register({
     name: 'createdAt',
     type: 'int',
     required: true
-  },
-  {
-    name: 'messageCount',  // Add this field
+  }, {
+    name: 'messageCount',
     type: 'int',
     required: false
-  }
-  ]
-})
+  }, {
+    name: 'driveKey',
+    type: 'string',
+    required: false
+  }]
+});
+
+
+
+
 
 // Message schema - matches application's message structure exactly
 template.register({
@@ -113,6 +145,13 @@ collections.collections.register({
   key: ['id']
 })
 
+// Register collection for drive metadata
+collections.collections.register({
+  name: 'drive-metadata',
+  schema: '@roombase/drive-metadata',
+  key: ['id']
+});
+
 collections.collections.register({
   name: 'metadata',
   schema: '@roombase/metadata',
@@ -163,6 +202,17 @@ namespace.register({
   name: 'set-metadata',
   requestType: '@roombase/metadata'
 })
+
+// Register command handlers
+namespace.register({
+  name: 'set-drive-key',
+  requestType: '@roombase/drive-metadata'
+});
+
+namespace.register({
+  name: 'update-drive-metadata',
+  requestType: '@roombase/drive-metadata'
+});
 
 Hyperdispatch.toDisk(hyperdispatch)
 

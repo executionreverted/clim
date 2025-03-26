@@ -114,7 +114,7 @@ const collection1 = {
   indexes: []
 }
 
-// '@roombase/metadata' collection key
+// '@roombase/drive-metadata' collection key
 const collection2_key = new IndexEncoder([
   IndexEncoder.STRING
 ], { prefix: 2 })
@@ -124,10 +124,10 @@ function collection2_indexify (record) {
   return a === undefined ? [] : [a]
 }
 
-// '@roombase/metadata' value encoding
-const collection2_enc = getEncoding('@roombase/metadata/hyperdb#2')
+// '@roombase/drive-metadata' value encoding
+const collection2_enc = getEncoding('@roombase/drive-metadata/hyperdb#2')
 
-// '@roombase/metadata' reconstruction function
+// '@roombase/drive-metadata' reconstruction function
 function collection2_reconstruct (version, keyBuf, valueBuf) {
   const key = collection2_key.decode(keyBuf)
   setVersion(version)
@@ -135,7 +135,7 @@ function collection2_reconstruct (version, keyBuf, valueBuf) {
   record.id = key[0]
   return record
 }
-// '@roombase/metadata' key reconstruction function
+// '@roombase/drive-metadata' key reconstruction function
 function collection2_reconstruct_key (keyBuf) {
   const key = collection2_key.decode(keyBuf)
   return {
@@ -143,9 +143,9 @@ function collection2_reconstruct_key (keyBuf) {
   }
 }
 
-// '@roombase/metadata'
+// '@roombase/drive-metadata'
 const collection2 = {
-  name: '@roombase/metadata',
+  name: '@roombase/drive-metadata',
   id: 2,
   encodeKey (record) {
     const key = [record.id]
@@ -169,7 +169,7 @@ const collection2 = {
   indexes: []
 }
 
-// '@roombase/messages' collection key
+// '@roombase/metadata' collection key
 const collection3_key = new IndexEncoder([
   IndexEncoder.STRING
 ], { prefix: 3 })
@@ -179,10 +179,10 @@ function collection3_indexify (record) {
   return a === undefined ? [] : [a]
 }
 
-// '@roombase/messages' value encoding
-const collection3_enc = getEncoding('@roombase/messages/hyperdb#3')
+// '@roombase/metadata' value encoding
+const collection3_enc = getEncoding('@roombase/metadata/hyperdb#3')
 
-// '@roombase/messages' reconstruction function
+// '@roombase/metadata' reconstruction function
 function collection3_reconstruct (version, keyBuf, valueBuf) {
   const key = collection3_key.decode(keyBuf)
   setVersion(version)
@@ -190,7 +190,7 @@ function collection3_reconstruct (version, keyBuf, valueBuf) {
   record.id = key[0]
   return record
 }
-// '@roombase/messages' key reconstruction function
+// '@roombase/metadata' key reconstruction function
 function collection3_reconstruct_key (keyBuf) {
   const key = collection3_key.decode(keyBuf)
   return {
@@ -198,9 +198,9 @@ function collection3_reconstruct_key (keyBuf) {
   }
 }
 
-// '@roombase/messages'
+// '@roombase/metadata'
 const collection3 = {
-  name: '@roombase/messages',
+  name: '@roombase/metadata',
   id: 3,
   encodeKey (record) {
     const key = [record.id]
@@ -224,11 +224,67 @@ const collection3 = {
   indexes: []
 }
 
+// '@roombase/messages' collection key
+const collection4_key = new IndexEncoder([
+  IndexEncoder.STRING
+], { prefix: 4 })
+
+function collection4_indexify (record) {
+  const a = record.id
+  return a === undefined ? [] : [a]
+}
+
+// '@roombase/messages' value encoding
+const collection4_enc = getEncoding('@roombase/messages/hyperdb#4')
+
+// '@roombase/messages' reconstruction function
+function collection4_reconstruct (version, keyBuf, valueBuf) {
+  const key = collection4_key.decode(keyBuf)
+  setVersion(version)
+  const record = c.decode(collection4_enc, valueBuf)
+  record.id = key[0]
+  return record
+}
+// '@roombase/messages' key reconstruction function
+function collection4_reconstruct_key (keyBuf) {
+  const key = collection4_key.decode(keyBuf)
+  return {
+    id: key[0]
+  }
+}
+
+// '@roombase/messages'
+const collection4 = {
+  name: '@roombase/messages',
+  id: 4,
+  encodeKey (record) {
+    const key = [record.id]
+    return collection4_key.encode(key)
+  },
+  encodeKeyRange ({ gt, lt, gte, lte } = {}) {
+    return collection4_key.encodeRange({
+      gt: gt ? collection4_indexify(gt) : null,
+      lt: lt ? collection4_indexify(lt) : null,
+      gte: gte ? collection4_indexify(gte) : null,
+      lte: lte ? collection4_indexify(lte) : null
+    })
+  },
+  encodeValue (version, record) {
+    setVersion(version)
+    return c.encode(collection4_enc, record)
+  },
+  trigger: null,
+  reconstruct: collection4_reconstruct,
+  reconstructKey: collection4_reconstruct_key,
+  indexes: []
+}
+
 const collections = [
   collection0,
   collection1,
   collection2,
-  collection3
+  collection3,
+  collection4
 ]
 
 const indexes = [
@@ -240,8 +296,9 @@ function resolveCollection (name) {
   switch (name) {
     case '@roombase/writer': return collection0
     case '@roombase/invite': return collection1
-    case '@roombase/metadata': return collection2
-    case '@roombase/messages': return collection3
+    case '@roombase/drive-metadata': return collection2
+    case '@roombase/metadata': return collection3
+    case '@roombase/messages': return collection4
     default: return null
   }
 }

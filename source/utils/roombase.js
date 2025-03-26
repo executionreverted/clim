@@ -3,6 +3,7 @@ import Autobase from 'autobase';
 import BlindPairing from 'blind-pairing';
 import HyperDB from 'hyperdb';
 import Hyperswarm from 'hyperswarm';
+import Hyperdrive from 'hyperdrive';
 import ReadyResource from 'ready-resource';
 import z32 from 'z32';
 import b4a from 'b4a';
@@ -127,6 +128,10 @@ class RoomBase extends ReadyResource {
     this.roomName = opts.roomName || 'Unnamed Room'
     this.messageListeners = []
 
+    // Add Hyperdrive for file sharing
+    this.drive = null;
+    this.driveKey = opts.driveKey || null;
+    this.driveWatcher = null;
     // Register command handlers
     this._registerHandlers()
 
@@ -166,6 +171,21 @@ class RoomBase extends ReadyResource {
       // Then insert the new metadata
       await context.view.insert('@roombase/metadata', data)
     })
+
+
+    this.router.add('@roombase/update-drive-metadata', async (data, context) => {
+      try {
+        await context.view.delete('@roombase/drive-metadata', { id: data.id });
+      } catch (e) {
+        // Ignore errors if no existing record
+      }
+      await context.view.insert('@roombase/drive-metadata', data);
+    });
+
+
+    this.router.add('@roombase/set-drive-key', async (data, context) => {
+      await context.view.insert('@roombase/drive-metadata', data);
+    });
   }
 
   _boot(opts = {}) {
@@ -228,6 +248,8 @@ class RoomBase extends ReadyResource {
 
   async _open() {
     await this.base.ready()
+
+    await this._initializeDrive();
     if (this.replicate) await this._replicate()
 
     // Save room info if not already stored
@@ -244,6 +266,51 @@ class RoomBase extends ReadyResource {
     await this.base.close()
   }
 
+
+  async _initializeDrive() {
+    try {
+      // Try to get drive key from metadata if not provided
+      if (!this.driveKey) {
+        const driveMetadata = await this._getDriveMetadata();
+        if (driveMetadata && driveMetadata.driveKey) {
+          this.driveKey = driveMetadata.driveKey;
+        }
+      }
+
+      // Initialize Hyperdrive with key if available
+      if (this.driveKey) {
+        // Use existing drive key
+        this.drive = new Hyperdrive(this.store, Buffer.from(this.driveKey, 'hex'));
+      } else {
+        // Create new drive
+        this.drive = new Hyperdrive(this.store);
+      }
+
+      await this.drive.ready();
+
+      // If this is a new drive (we didn't have a key before), store the key
+      if (!this.driveKey) {
+        this.driveKey = this.drive.key.toString('hex');
+        await this._storeDriveKey();
+      }
+
+      // Create initial marker files to establish structure
+      try {
+        const rootFilesExists = await this.drive.exists('/files/.keep');
+        if (!rootFilesExists) {
+          await this.drive.put('/files/.keep', Buffer.from(''));
+          await this.drive.put('/shared/.keep', Buffer.from(''));
+        }
+      } catch (err) {
+        console.error('Error initializing drive structure:', err);
+      }
+    } catch (err) {
+      console.error('Error initializing drive:', err);
+      throw err;
+    }
+  }
+
+
   async _initializeRoom() {
     const existingRoom = await this.getRoomInfo()
     if (!existingRoom) {
@@ -252,14 +319,12 @@ class RoomBase extends ReadyResource {
         id: this.roomId,
         name: this.roomName,
         createdAt: Date.now(),
-        messageCount: 0
+        messageCount: 0,
+        driveKey: this.driveKey
       }
       try {
         const dispatchData = dispatch('@roombase/set-metadata', a);
         await this.base.append(dispatchData)
-
-
-        writeFileSync('./init', 'CREATED' + JSON.stringify(a))
       } catch (e) {
         writeFileSync('./init', JSON.stringify(e.message))
       }
@@ -268,6 +333,19 @@ class RoomBase extends ReadyResource {
       // Update local properties from stored values
       this.roomId = existingRoom.id
       this.roomName = existingRoom.name
+      if (!existingRoom.driveKey && this.driveKey) {
+        try {
+          const updatedInfo = {
+            ...existingRoom,
+            driveKey: this.driveKey
+          };
+
+          const dispatchData = dispatch('@roombase/set-metadata', updatedInfo);
+          await this.base.append(dispatchData);
+        } catch (e) {
+          console.error('Error updating room with drive key:', e);
+        }
+      }
 
       writeFileSync('./init', JSON.stringify('exist'))
     }
@@ -292,6 +370,33 @@ class RoomBase extends ReadyResource {
   get writable() {
     return this.base.writable
   }
+
+  async _storeDriveKey() {
+    if (!this.driveKey) return;
+
+    try {
+      const metadata = {
+        id: this.roomId,
+        driveKey: this.driveKey,
+        createdAt: Date.now()
+      };
+
+      const dispatchData = dispatch('@roombase/set-drive-key', metadata);
+      await this.base.append(dispatchData);
+    } catch (err) {
+      console.error('Error storing drive key:', err);
+    }
+  }
+
+  async _getDriveMetadata() {
+    try {
+      return await this.base.view.get('@roombase/drive-metadata', { id: this.roomId });
+    } catch (err) {
+      return null;
+    }
+  }
+
+
 
   static pair(store, invite, opts) {
     return new RoomBasePairer(store, invite, opts)
@@ -543,6 +648,158 @@ class RoomBase extends ReadyResource {
     }
 
     return writers;
+  }
+
+  async getFiles(directory = '/files', options = {}) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    const { recursive = false, limit = 50 } = options;
+
+    try {
+      const fileEntries = [];
+      const stream = this.drive.list(directory, { recursive });
+
+      for await (const entry of stream) {
+        // Skip the .keep files used for directory structure
+        if (entry.key.endsWith('/.keep')) continue;
+
+        // Add additional metadata
+        const entryWithMetadata = {
+          ...entry,
+          path: entry.key,
+          isDirectory: !entry.value.blob,
+          size: entry.value.blob ? entry.value.blob.byteLength : 0,
+          createdAt: Date.now()
+        };
+
+        fileEntries.push(entryWithMetadata);
+
+        if (fileEntries.length >= limit) break;
+      }
+
+      return fileEntries;
+    } catch (err) {
+      console.error(`Error listing files from ${directory}:`, err);
+      return [];
+    }
+  }
+
+  watchFiles(directory = '/files') {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      if (this.driveWatcher) this.driveWatcher.destroy();
+
+      this.driveWatcher = this.drive.watch(directory);
+      return this.driveWatcher;
+    } catch (err) {
+      console.error(`Error watching directory ${directory}:`, err);
+      return null;
+    }
+  }
+
+  async uploadFile(data, path, options = {}) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      await this.drive.put(path, data, options);
+
+      // Return file metadata
+      return {
+        path,
+        size: data.length,
+        name: path.split('/').pop()
+      };
+    } catch (err) {
+      console.error(`Error uploading file to ${path}:`, err);
+      return null;
+    }
+  }
+
+  async downloadFile(path) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      const fileExists = await this.drive.exists(path);
+      if (!fileExists) throw new Error(`File does not exist: ${path}`);
+
+      return await this.drive.get(path);
+    } catch (err) {
+      console.error(`Error downloading file from ${path}:`, err);
+      return null;
+    }
+  }
+
+  async createDirectory(path) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      const dirPath = path.endsWith('/') ? path : path + '/';
+      await this.drive.put(dirPath + '.keep', Buffer.from(''));
+      return true;
+    } catch (err) {
+      console.error(`Error creating directory at ${path}:`, err);
+      return false;
+    }
+  }
+
+  // Delete a file
+  async deleteFile(path) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      const entry = await this.drive.entry(path);
+      if (!entry) throw new Error(`File not found: ${path}`);
+
+      await this.drive.del(path);
+      return true;
+    } catch (err) {
+      console.error(`Error deleting file at ${path}:`, err);
+      return false;
+    }
+  }
+
+  async deleteDirectory(dirPath) {
+    if (!this.drive) throw new Error('Drive not initialized');
+
+    try {
+      const normalizedPath = dirPath.endsWith('/') ? dirPath : dirPath + '/';
+
+      const entries = await this.getFiles(normalizedPath, { recursive: true });
+
+      for (const entry of entries) {
+        await this.drive.del(entry.path);
+      }
+
+      try {
+        await this.drive.del(normalizedPath + '.keep');
+      } catch (e) {
+        // Ignore errors if marker doesn't exist
+      }
+
+      return true;
+    } catch (err) {
+      console.error(`Error deleting directory ${dirPath}:`, err);
+      return false;
+    }
+  }
+
+
+
+  static async joinRoom(store, inviteCode, opts = {}) {
+    const pair = RoomBase.pair(store, inviteCode, opts);
+    const room = await pair.finished();
+
+    // After joining, ensure we get the drive key
+    const roomInfo = await room.getRoomInfo();
+
+    // If room has drive key, use it
+    if (roomInfo && roomInfo.driveKey) {
+      room.driveKey = roomInfo.driveKey;
+      await room._initializeDrive();
+    }
+
+    return room;
   }
 }
 

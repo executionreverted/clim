@@ -1,21 +1,60 @@
-// components/Chat/UserList.js - Updated to use RoomBaseContext
+// components/Chat/UserList.js - Enhanced with status indicators
 import React, { memo, useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
-// Memoized peer item to prevent unnecessary rerenders
+
+// Memoized peer item with status indicator
 const PeerItem = memo(({ peer, isFocused, colors }) => {
-  const { secondaryColor, mutedTextColor, primaryColor } = colors;
+  const {
+    secondaryColor,
+    mutedTextColor,
+    primaryColor,
+    successColor,
+    errorColor,
+    warningColor
+  } = colors;
+
+  // Determine status color based on peer properties
+  const getStatusColor = () => {
+    if (peer.isYou) return secondaryColor;
+    if (peer.status === 'online') return successColor;
+    if (peer.status === 'idle') return warningColor;
+    if (peer.status === 'offline') return errorColor;
+    if (peer.anonymous) return mutedTextColor;
+
+    // Default status color for connected peers
+    return primaryColor;
+  };
+
+  // Determine status based on lastSeen
+  const getPeerStatus = () => {
+    if (peer.isYou) return 'online';
+    if (!peer.lastSeen) return 'unknown';
+
+    const timeSinceLastSeen = Date.now() - peer.lastSeen;
+    if (timeSinceLastSeen < 30000) return 'online'; // Within 30 seconds
+    if (timeSinceLastSeen < 300000) return 'idle';  // Within 5 minutes
+    return 'offline';                               // More than 5 minutes
+  };
+
+  // Set status for display
+  const status = getPeerStatus();
+  peer.status = status; // Update the peer object with status
+  const statusColor = getStatusColor();
 
   return (
     <Box>
-      <Text
-        color={peer.isYou ? secondaryColor : (peer.anonymous ? mutedTextColor : primaryColor)}
-        bold={peer.isYou}
-        wrap="truncate"
-      >
-        {isFocused ? '•' : ' '} {peer.username}
-        {peer.isYou && ' (you)'}
+      <Text wrap="truncate">
+        {isFocused ? '•' : ' '}
+        <Text color={statusColor}>o</Text> {/* Status indicator */}
+        <Text
+          color={peer.isYou ? secondaryColor : (peer.anonymous ? mutedTextColor : primaryColor)}
+          bold={peer.isYou}
+        >
+          {' '}{peer.username}
+          {peer.isYou && ' (you)'}
+        </Text>
       </Text>
     </Box>
   );
@@ -25,12 +64,13 @@ const PeerItem = memo(({ peer, isFocused, colors }) => {
     prevProps.peer.username === nextProps.peer.username &&
     prevProps.peer.isYou === nextProps.peer.isYou &&
     prevProps.peer.anonymous === nextProps.peer.anonymous &&
+    prevProps.peer.lastSeen === nextProps.peer.lastSeen &&
     prevProps.isFocused === nextProps.isFocused
   );
 });
 
 const UserList = ({ width = 20, height = 20, isFocused = false }) => {
-  const { activeRoomId, connections, peers, identity, connectedPeers } = useChat();
+  const { activeRoomId, connections, peers, identity } = useChat();
   const currentTheme = useThemeUpdate();
 
   // Theme colors for styling
@@ -40,6 +80,9 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
     mutedTextColor,
     borderColor,
     activeBorderColor,
+    successColor,
+    errorColor,
+    warningColor
   } = currentTheme.colors;
 
   // CRUCIAL CHANGE: Maintain our own stable state of user list
@@ -49,6 +92,17 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
   // References to track changes
   const lastUpdateTimeRef = useRef(Date.now());
   const pendingUpdateRef = useRef(null);
+
+  // Set up periodic refresh for peer status indicators
+  useEffect(() => {
+    // Update status indicators every 30 seconds
+    const statusTimer = setInterval(() => {
+      // Force update of the component to refresh status indicators
+      setStableUserList(prev => [...prev]);
+    }, 30000);
+
+    return () => clearInterval(statusTimer);
+  }, []);
 
   // Get the raw data from context
   const rawPeerCount = activeRoomId ? (peers[activeRoomId] || 0) : 0;
@@ -72,7 +126,9 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
           id: identity.publicKey,
           stableKey: 'you',
           username: identity.username,
-          isYou: true
+          isYou: true,
+          status: 'online',
+          lastSeen: Date.now()
         });
       }
 
@@ -92,12 +148,12 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
           anonymous: !connection.publicKey || connection.anonymous
         });
       });
+
       setStableUserList(newUserList);
       setStablePeerCount(rawPeerCount);
       lastUpdateTimeRef.current = Date.now();
     }
   }, [rawConnections, rawPeerCount, identity]);
-
 
   // Calculate how many max peers we can show based on available height
   // Accounting for header (2 lines) and footer (2 lines)
@@ -118,6 +174,11 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
   // If we have no peers yet BUT we have raw connection data, show a loading message instead of "No peers"
   const isLoading = stableUserList.length === 0 && rawConnections.length > 0;
 
+  // Get connected peer count (excluding anonymous)
+  const connectedPeers = sortedPeers.filter(peer =>
+    peer.status === 'online' && !peer.anonymous
+  ).length;
+
   return (
     <Box
       flexGrow={1}
@@ -130,7 +191,7 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
     >
       <Box>
         <Text bold underline wrap="truncate">
-          Connected Peers ({connectedPeers || 0})
+          Connected Peers ({connectedPeers}/{stablePeerCount})
         </Text>
       </Box>
 
@@ -147,7 +208,14 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
               key={peer.stableKey || peer.id}
               peer={peer}
               isFocused={isFocused}
-              colors={{ primaryColor, secondaryColor, mutedTextColor }}
+              colors={{
+                primaryColor,
+                secondaryColor,
+                mutedTextColor,
+                successColor,
+                errorColor,
+                warningColor
+              }}
             />
           ))}
 
@@ -162,11 +230,14 @@ const UserList = ({ width = 20, height = 20, isFocused = false }) => {
       )}
 
       <Box marginTop={1}>
-        <Text color={mutedTextColor} italic wrap="truncate">
-          {stablePeerCount === 0
-            ? 'Join a room to connect with peers'
-            : 'Some peers may appear as anonymous'}
-        </Text>
+        {stablePeerCount === 0
+          ? <Text>Join a room to connect with peers</Text>
+          : <Box flexDirection="column">
+            <Text color={successColor}>o online</Text>
+            <Text color={warningColor}>o idle</Text>
+            <Text color={errorColor}>o offline</Text>
+          </Box>
+        }
       </Box>
     </Box>
   );

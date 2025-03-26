@@ -29,9 +29,22 @@
       "trigger": null
     },
     {
-      "name": "metadata",
+      "name": "drive-metadata",
       "namespace": "roombase",
       "id": 2,
+      "type": 1,
+      "indexes": [],
+      "schema": "@roombase/drive-metadata",
+      "derived": false,
+      "key": [
+        "id"
+      ],
+      "trigger": null
+    },
+    {
+      "name": "metadata",
+      "namespace": "roombase",
+      "id": 3,
       "type": 1,
       "indexes": [],
       "schema": "@roombase/metadata",
@@ -44,7 +57,7 @@
     {
       "name": "messages",
       "namespace": "roombase",
-      "id": 3,
+      "id": 4,
       "type": 1,
       "indexes": [],
       "schema": "@roombase/messages",
