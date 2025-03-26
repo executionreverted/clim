@@ -723,7 +723,8 @@ export function RoomBaseProvider({ children }) {
         id: room.id,
         name: room.name,
         key: room.key,
-        encryptionKey: room.encryptionKey
+        encryptionKey: room.encryptionKey,
+        driveKey: room.driveKey
       }));
       fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
     } catch (err) {
@@ -771,7 +772,8 @@ export function RoomBaseProvider({ children }) {
         id: roomId,
         name: roomName,
         key: room.key.toString('hex'),
-        encryptionKey: room.encryptionKey.toString('hex')
+        encryptionKey: room.encryptionKey.toString('hex'),
+        driveKey: await room.driveKey
       };
 
       // Store the room instance
@@ -784,6 +786,7 @@ export function RoomBaseProvider({ children }) {
         name: roomName,
         key: roomKey.key,
         encryptionKey: roomKey.encryptionKey,
+        driveKey: await room.driveKey,
         messages: [],
         status: 'connected'
       };
