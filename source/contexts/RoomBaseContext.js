@@ -302,7 +302,7 @@ export function RoomBaseProvider({ children }) {
       try {
         // Always use root directory for flat structure
         console.log(`Loading files from flat structure for room ${roomId}`);
-
+        await room.updateDrive()
         // Get files from the drive with the simplified flat structure
         const files = await room.getFiles('/', { recursive: false });
         console.log(`Found ${files.length} files`);
@@ -349,29 +349,17 @@ export function RoomBaseProvider({ children }) {
     }
 
     // Setup polling instead of relying only on watcher
-    const pollingInterval = 10000; // Poll every 10 seconds
-    const pollingTimer = setInterval(async () => {
-      try {
-        if (!roomInstances.current.has(roomId)) {
-          clearInterval(pollingTimer);
-          return;
-        }
 
-        const currentRoom = roomInstances.current.get(roomId);
-        if (currentRoom && currentRoom.drive) {
-          // Explicitly update the drive and reload files
-          await currentRoom.updateDrive();
-          await loadRoomFiles(roomId);
-        }
-      } catch (err) {
-        console.error(`Error in file polling for room ${roomId}:`, err);
-      }
-    }, pollingInterval);
+    const currentRoom = roomInstances.current.get(roomId);
+    if (currentRoom && currentRoom.drive) {
+      // Explicitly update the drive and reload files
+      currentRoom.updateDrive();
+      loadRoomFiles(roomId);
+    }
 
     // Store the timer for cleanup
     fileWatchers.current.set(roomId, {
       destroy: async () => {
-        clearInterval(pollingTimer);
         return Promise.resolve();
       }
     });
@@ -1389,6 +1377,7 @@ export function RoomBaseProvider({ children }) {
   // Provide the context value
   const contextValue = {
     rooms: state.rooms,
+    roomInstances,
     activeRoom,
     activeRoomId: state.activeRoomId,
     error: state.error,
