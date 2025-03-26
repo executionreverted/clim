@@ -1051,6 +1051,7 @@ class RoomBase extends ReadyResource {
         executable
       };
 
+      writeFileSync('./uploadedfile', JSON.stringify(normalizedPath + JSON.stringify(data)))
       // Upload file to drive
       await this.drive.put(normalizedPath, data, putOptions);
 

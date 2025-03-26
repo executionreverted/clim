@@ -445,7 +445,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     setShowFileExplorer(false);
 
     // Upload files one by one to avoid memory issues
-    const uploadFile = async (index) => {
+    const processFiles = async (index) => {
       if (index >= filesArray.length) {
         setLoading(false);
         return;
@@ -453,23 +453,22 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
       const file = filesArray[index];
       try {
+        // Use the uploadFile from context, not the local function name
         await uploadFile(activeRoomId, file);
 
         // Upload next file
-        uploadFile(index + 1);
+        processFiles(index + 1);
       } catch (err) {
         console.error(`Error uploading file ${file.name}:`, err);
 
         // Continue with next file
-        uploadFile(index + 1);
+        processFiles(index + 1);
       }
     };
 
     // Start uploading files
-    uploadFile(0);
-  }, [activeRoomId, uploadFile, setShowFileExplorer, setLoading]);
-
-  const contextValue = {
+    processFiles(0);
+  }, [activeRoomId, uploadFile, setShowFileExplorer, setLoading]); const contextValue = {
     // From RoomBase context
     rooms,
     activeRoom,
