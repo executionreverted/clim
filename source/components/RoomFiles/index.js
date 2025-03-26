@@ -41,7 +41,7 @@ const RoomFiles = ({ onBack }) => {
   const roomFiles = activeRoomId && files[activeRoomId] ? files[activeRoomId] : [];
 
   // Get current path for the active room
-  const currentPath = activeRoomId ? (currentDirectory[activeRoomId] || '/files') : '/files';
+  const currentPath = activeRoomId ? (currentDirectory[activeRoomId] || '/') : '/';
 
   // Update terminal dimensions if they change
   useEffect(() => {

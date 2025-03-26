@@ -241,15 +241,43 @@ export function RoomBaseProvider({ children }) {
   const fileWatchers = useRef(new Map())
 
 
+  // In RoomBaseContext.js - Make sure loadRoomFiles is properly implemented:
+
   const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
     const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return [];
+    if (!room) {
+      console.error(`No room instance found for ID ${roomId}`);
+      return [];
+    }
+
+    if (!room.drive) {
+      console.error(`Room ${roomId} has no drive initialized`);
+      // Try to initialize drive if we have a key but drive isn't ready
+      if (room.driveKey) {
+        try {
+          console.log(`Attempting to initialize drive for room ${roomId} with key ${room.driveKey}`);
+          await room._initializeDrive();
+          if (!room.drive) {
+            console.error(`Failed to initialize drive after attempt`);
+            return [];
+          }
+        } catch (err) {
+          console.error(`Error initializing drive: ${err.message}`);
+          return [];
+        }
+      } else {
+        return [];
+      }
+    }
 
     dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
 
     try {
       // Get current directory path from state or use default
       const currentPath = state.currentDirectory[roomId] || directory;
+
+      // Log the current path
+      console.log(`Loading files from ${currentPath} for room ${roomId}`);
 
       // Update current directory in state
       dispatch({
@@ -259,6 +287,7 @@ export function RoomBaseProvider({ children }) {
 
       // Get files from the drive
       const files = await room.getFiles(currentPath);
+      console.log(`Found ${files.length} files at ${currentPath}`);
 
       // Update state
       dispatch({
@@ -268,13 +297,12 @@ export function RoomBaseProvider({ children }) {
 
       return files;
     } catch (err) {
-      writeFileSync('./loadroomfiles', JSON.stringify(err.message))
       console.error(`Error loading files for room ${roomId}:`, err);
       return [];
     } finally {
       dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
     }
-  }, []);
+  }, [state.currentDirectory]);
 
   const setupFileWatcher = useCallback((roomId) => {
     const room = roomInstances.current.get(roomId);
@@ -333,13 +361,18 @@ export function RoomBaseProvider({ children }) {
   const saveRoomsToFile = () => {
     try {
       // Make sure we extract all necessary properties including driveKey
-      const roomKeys = state.rooms.map(room => ({
-        id: room.id,
-        name: room.name,
-        key: room.key,
-        encryptionKey: room.encryptionKey,
-        driveKey: room.driveKey || null
-      }));
+      const roomKeys = state.rooms.map(room => {
+        // Log each room to debug
+        console.log(`Saving room ${room.id} with driveKey: ${room.driveKey}`);
+
+        return {
+          id: room.id,
+          name: room.name,
+          key: room.key,
+          encryptionKey: room.encryptionKey,
+          driveKey: room.driveKey || null // Ensure driveKey is explicitly included
+        };
+      });
 
       // Ensure directory exists before trying to write
       ensureDirectoryExists(path.dirname(ROOMS_FILE));
@@ -351,8 +384,7 @@ export function RoomBaseProvider({ children }) {
       console.error('Error saving room keys:', err);
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
     }
-  }
-  // Ensure config directory exists and load identity
+  };  // Ensure config directory exists and load identity
   useEffect(() => {
     try {
       // Ensure all required directories exist
@@ -382,7 +414,8 @@ export function RoomBaseProvider({ children }) {
           }
         } catch (readErr) {
           console.error(`Error reading rooms file: ${readErr.message}`);
-          fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
+          process.exit("1")
+          // fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
         }
       } else {
         console.log(`No rooms file found, creating empty one at ${ROOMS_FILE}`);
@@ -397,11 +430,6 @@ export function RoomBaseProvider({ children }) {
 
     // Cleanup when unmounting
     return () => {
-      // Save rooms before closing
-      if (state.rooms.length > 0) {
-        saveRoomsToFile();
-      }
-
       // Close each room instance and its corestore
       for (const [roomId, room] of roomInstances.current.entries()) {
         room.close().catch(err => {
@@ -464,7 +492,7 @@ export function RoomBaseProvider({ children }) {
 
     try {
       // Determine file path
-      const currentPath = state.currentDirectory[roomId] || '/files';
+      const currentPath = state.currentDirectory[roomId] || '/';
       const filePath = customPath || `${currentPath}/${file.name}`;
 
       // Read file data
@@ -640,7 +668,8 @@ export function RoomBaseProvider({ children }) {
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
           roomName: roomKey.name,
-          driveStore: driveStore
+          driveStore: driveStore,
+          driveKey: roomKey.driveKey
         });
 
         await room.ready();
@@ -706,6 +735,7 @@ export function RoomBaseProvider({ children }) {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           messages: messages || [],
+          driveKey: roomKey.driveKey,
           status: 'connected'
         });
 
@@ -785,7 +815,7 @@ export function RoomBaseProvider({ children }) {
   // Save rooms to file when they change
   useEffect(() => {
     // Only save if we have rooms
-    if (state.rooms.length > 0) {
+    if (state.rooms.length !== 0) {
       try {
         const roomKeys = state.rooms.map(room => ({
           id: room.id,
@@ -809,6 +839,8 @@ export function RoomBaseProvider({ children }) {
       }
     }
   }, [state.rooms]);  // Function to create a new room
+
+
   const createRoom = async (name) => {
     if (!name || name.trim() === '') {
       return null;
@@ -927,8 +959,39 @@ export function RoomBaseProvider({ children }) {
         // Get messages
         let messages = [];
         try {
-          const messageStream = room.getMessages({ limit: 20, reverse: true });
-          // Process messages...
+
+          await updateMessageCount(roomId);
+
+          try {
+            // Add explicit await and limit
+            const messageStream = room.getMessages({ limit: 10, reverse: true });
+
+            // Handle different return types (promise vs stream)
+            if (messageStream.then) {
+              // It's a promise that resolves to an array
+              messages = await messageStream;
+            } else if (messageStream.on) {
+              // It's a Node.js stream
+              messages = await new Promise((resolve, reject) => {
+                const results = [];
+                messageStream.on('data', msg => results.push(msg));
+                messageStream.on('end', () => resolve(results));
+                messageStream.on('error', err => {
+                  console.error('Error in message stream:', err);
+                  resolve(results); // Resolve with partial results on error
+                });
+              });
+            } else if (Array.isArray(messageStream)) {
+              // It's already an array
+              messages = messageStream;
+            }
+
+            console.log(`Loaded ${messages.length} initial messages for room ${roomId}`);
+          } catch (msgErr) {
+            console.error('Failed to retrieve messages:', msgErr);
+            // Still proceed with empty messages array
+          }
+
         } catch (msgErr) {
           console.error('Failed to retrieve messages:', msgErr);
         }
@@ -950,7 +1013,6 @@ export function RoomBaseProvider({ children }) {
 
         // Setup file watcher and load initial files
         setupFileWatcher(roomId);
-        await loadRoomFiles(roomId);
 
         joinInProgress.current = false;
         return roomId;
@@ -1010,6 +1072,7 @@ export function RoomBaseProvider({ children }) {
       }
 
       dispatch({ type: ACTIONS.REMOVE_ROOM, payload: roomId });
+      saveRoomsToFile()
       return true;
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to leave room: ${err.message}` });
