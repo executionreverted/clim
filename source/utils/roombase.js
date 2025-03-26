@@ -278,71 +278,82 @@ class RoomBase extends ReadyResource {
     await this.base.close()
   }
 
+  // Improved implementation for the _initializeDrive method in RoomBase class
   async _initializeDrive() {
     try {
-      console.log('Initializing drive');
+      console.log('Initializing drive...');
+
+      // Make sure we have a drive store
+      if (!this.driveStore) {
+        console.error('No drive store provided');
+        return false;
+      }
+
+      await this.driveStore.ready();
 
       // Try to get drive key from metadata if not provided
       if (!this.driveKey) {
-        const driveMetadata = await this._getDriveMetadata();
-        if (driveMetadata && driveMetadata.driveKey) {
-          this.driveKey = driveMetadata.driveKey;
-          console.log(`Using existing drive key from metadata: ${this.driveKey}`);
+        try {
+          const driveMetadata = await this._getDriveMetadata();
+          if (driveMetadata && driveMetadata.driveKey) {
+            this.driveKey = driveMetadata.driveKey;
+            console.log(`Using existing drive key from metadata: ${this.driveKey}`);
+          }
+        } catch (err) {
+          console.error('Error fetching drive metadata:', err);
+          // Continue to create a new drive
         }
       } else {
         console.log(`Already have drive key: ${this.driveKey}`);
       }
 
-      // Create drive store directory if it doesn't exist
-      if (this.driveStore && !this.driveStore.path) {
-        console.error('Drive store missing path property, this may cause issues');
-      }
-
-      // Initialize Hyperdrive with key if available
-      if (this.driveKey) {
-        try {
+      // Create or open the drive
+      try {
+        if (this.driveKey) {
           // Convert from hex string to Buffer if needed
           const driveKeyBuffer = typeof this.driveKey === 'string'
             ? Buffer.from(this.driveKey, 'hex')
             : this.driveKey;
 
-          console.log(`Initializing drive with existing key: ${this.driveKey}`);
+          console.log(`Opening drive with existing key: ${this.driveKey}`);
           this.drive = new Hyperdrive(this.driveStore, driveKeyBuffer);
-        } catch (driveErr) {
-          console.error('Error creating drive with key:', driveErr);
-          // Fall back to creating a new drive
+        } else {
+          // Create new drive
+          console.log('Creating new hyperdrive...');
           this.drive = new Hyperdrive(this.driveStore);
         }
-      } else {
-        // Create new drive
-        console.log('Creating new hyperdrive');
-        this.drive = new Hyperdrive(this.driveStore);
+
+        // Wait for the drive to be ready
+        await this.drive.ready();
+        console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
+
+        // If this is a new drive (we didn't have a key before), store the key
+        if (!this.driveKey) {
+          this.driveKey = this.drive.key.toString('hex');
+          console.log(`New drive created with key: ${this.driveKey}`);
+
+          // Store the drive key in room metadata (this will also update room info)
+          await this._storeDriveKey();
+        }
+
+        // Create root folders for better organization
+        await this._ensureRootFolders();
+
+        // Setup drive replication
+        await this._setupDriveReplication();
+
+        return true;
+      } catch (err) {
+        console.error('Error initializing drive:', err);
+        this.drive = null; // Clear reference on failure
+        return false;
       }
-
-      await this.drive.ready();
-      console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
-
-      // If this is a new drive (we didn't have a key before), store the key
-      if (!this.driveKey) {
-        this.driveKey = this.drive.key.toString('hex');
-        console.log(`New drive created with key: ${this.driveKey}`);
-        await this._storeDriveKey();
-      }
-
-      // Create root folders for better organization
-      await this._ensureRootFolders();
-
-      // Setup drive replication
-      await this._setupDriveReplication();
-
-      return true;
     } catch (err) {
-      console.error('Error initializing drive:', err);
-      this.drive = null; // Clear reference on failure
+      console.error('Error in _initializeDrive:', err);
+      this.drive = null;
       return false;
     }
-  }
-  // Helper to ensure root folders exist
+  }  // Helper to ensure root folders exist
   async _ensureRootFolders() {
     if (!this.drive) return;
 
@@ -478,26 +489,52 @@ class RoomBase extends ReadyResource {
     }
 
     try {
+      console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
+
+      // First check if we have an existing record
+      let existingRecord = null;
+      try {
+        existingRecord = await this._getDriveMetadata();
+      } catch (err) {
+        // Ignore error if no record exists
+      }
+
+      // Create metadata record
       const metadata = {
         id: this.roomId,
         driveKey: this.driveKey,
         createdAt: Date.now()
       };
 
-      console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
+      // Store drive key in dedicated metadata collection
       const dispatchData = dispatch('@roombase/set-drive-key', metadata);
       await this.base.append(dispatchData);
+      console.log('Drive key saved to metadata collection');
 
       // Also update room metadata with drive key
-      const room = await this.getRoomInfo();
-      if (room) {
-        const updatedRoom = {
-          ...room,
-          driveKey: this.driveKey
-        };
+      try {
+        const room = await this.getRoomInfo();
+        if (room) {
+          // Only update if the drive key is not already set or has changed
+          if (!room.driveKey || room.driveKey !== this.driveKey) {
+            const updatedRoom = {
+              ...room,
+              driveKey: this.driveKey
+            };
 
-        const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
-        await this.base.append(metadataDispatch);
+            console.log('Updating room metadata with drive key');
+            const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
+            await this.base.append(metadataDispatch);
+            console.log('Room metadata updated with drive key');
+          } else {
+            console.log('Room already has the correct drive key');
+          }
+        } else {
+          console.warn('Could not find room info to update with drive key');
+        }
+      } catch (roomErr) {
+        console.error('Error updating room with drive key:', roomErr);
+        // Continue even if this part fails - the dedicated record is more important
       }
 
       return true;
@@ -912,19 +949,18 @@ class RoomBase extends ReadyResource {
     }
   }
 
+  // Simplified getFiles function for a flat structure
   async getFiles(directory = '/', options = {}) {
     if (!this.drive) {
       console.error('Drive not initialized in getFiles');
       return [];
     }
 
-    const { recursive = false, limit = 100 } = options;
+
+    const { limit = 100 } = options;
 
     try {
-      console.log(`Listing files in directory: ${directory}`);
-
-      // Ensure directory path ends with /
-      const dirPath = directory.endsWith('/') ? directory : directory + '/';
+      console.log(`Getting files from drive (flat structure)`);
 
       const fileEntries = [];
 
@@ -935,7 +971,9 @@ class RoomBase extends ReadyResource {
 
       // Add error handling for drive.list
       try {
-        const stream = this.drive.list(dirPath, { recursive });
+        await this.updateDrive()
+        // Always list from root with no recursion
+        const stream = this.drive.list('/', { recursive: false });
 
         if (!stream) {
           console.error('No stream returned from drive.list');
@@ -943,18 +981,24 @@ class RoomBase extends ReadyResource {
         }
 
         for await (const entry of stream) {
-          console.log(`Found entry: ${entry.key}`);
+          // Skip directory markers and hidden files
+          if (entry.key.endsWith('/') || entry.key.startsWith('.')) continue;
 
-          // Skip the dotfiles used for directory structure
-          if (path.basename(entry.key).startsWith('.')) continue;
+          // Skip if it's a hidden file
+          const name = entry.key.split('/').pop();
+          if (name && name.startsWith('.')) continue;
 
-          // Add entry to results
+          const isDirectory = !entry.value.blob;
+
+          // Skip directories in flat structure
+          if (isDirectory) continue;
+
+          // Add file to results
           fileEntries.push({
             ...entry,
             path: entry.key,
-            relativePath: entry.key.startsWith(dirPath) ? entry.key.slice(dirPath.length) : entry.key,
-            name: path.basename(entry.key),
-            isDirectory: !entry.value.blob,
+            name: name || 'Unknown',
+            isDirectory: false,
             size: entry.value.blob ? entry.value.blob.byteLength : 0,
             createdAt: Date.now()
           });
@@ -963,26 +1007,24 @@ class RoomBase extends ReadyResource {
         }
       } catch (listErr) {
         console.error(`Error in drive.list: ${listErr.message}`);
-        // Try to check if directory exists
-        try {
-          const exists = await this.directoryExists(dirPath);
-          console.log(`Directory ${dirPath} exists: ${exists}`);
-        } catch (existsErr) {
-          console.error(`Error checking directory: ${existsErr.message}`);
-        }
       }
 
-      // Sort entries: directories first, then files alphabetically
+      // Sort by newest first based on timestamp or creation time
       return fileEntries.sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
+        // Sort by timestamp if available
+        if (a.value && a.value.metadata && a.value.metadata.timestamp &&
+          b.value && b.value.metadata && b.value.metadata.timestamp) {
+          return b.value.metadata.timestamp - a.value.metadata.timestamp;
+        }
+        // Fall back to path comparison if no timestamp
         return a.name.localeCompare(b.name);
       });
     } catch (err) {
-      console.error(`Error listing files from ${directory}:`, err);
+      console.error(`Error listing files:`, err);
       return [];
     }
   }
+
   watchFiles(directory = '/') {
     if (!this.drive) throw new Error('Drive not initialized');
 
@@ -1030,6 +1072,7 @@ class RoomBase extends ReadyResource {
     }
   }
 
+  // Simplified uploadFile function for flat structure
   async uploadFile(data, filePath, options = {}) {
     if (!this.drive) {
       console.error('Drive not initialized');
@@ -1037,53 +1080,43 @@ class RoomBase extends ReadyResource {
     }
 
     try {
-      // Normalize path to ensure it's a valid hyperdrive path
-      const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+      // Get just the filename without path
+      const filename = filePath.includes('/')
+        ? filePath.split('/').pop()
+        : filePath;
 
-      // Extract directory path and ensure it exists
-      const dirPath = path.dirname(normalizedPath);
-      if (dirPath && dirPath !== '/') {
-        // Create parent directories if they don't exist
-        const exists = await this.directoryExists(dirPath);
-        if (!exists) {
-          await this.createDirectory(dirPath);
-        }
-      }
+      // Always store files in root with just the filename
+      const finalPath = `/${filename}`;
 
-      // Set metadata if provided
-      const metadata = options.metadata || null;
-      const executable = options.executable || false;
-
-      // Prepare options for put
-      const putOptions = {
-        metadata,
-        executable
+      // Set metadata with timestamp for sorting
+      const metadata = {
+        ...(options.metadata || {}),
+        timestamp: Date.now(),
+        originalName: filename
       };
 
-      writeFileSync('./uploadedfile', JSON.stringify(normalizedPath + JSON.stringify(data)))
-      // Upload file to drive
-      await this.drive.put(normalizedPath, data, putOptions);
+      // Simple executable flag
+      const executable = options.executable || false;
 
-      // Get entry to return accurate metadata
-      const entry = await this.drive.entry(normalizedPath);
+      // Upload file to drive in root path
+      await this.drive.put(finalPath, data, {
+        metadata,
+        executable
+      });
 
       // Return file metadata
       return {
-        path: normalizedPath,
-        name: path.basename(normalizedPath),
+        path: finalPath,
+        name: filename,
         size: data.length,
-        byteLength: entry?.value?.blob?.byteLength || data.length,
         metadata: metadata,
-        executable: executable,
-        timestamp: Date.now()
+        timestamp: metadata.timestamp
       };
     } catch (err) {
-      console.error(`Error uploading file to ${filePath}:`, err);
-      if (err.stack) console.error(err.stack);
+      console.error(`Error uploading file:`, err);
       return null;
     }
   }
-
   async downloadFile(filePath, options = {}) {
     if (!this.drive) throw new Error('Drive not initialized');
 
@@ -1240,24 +1273,56 @@ class RoomBase extends ReadyResource {
   }
 
 
+  // Improved static joinRoom function for better drive handling
   static async joinRoom(store, inviteCode, opts = {}) {
-    const pair = RoomBase.pair(store, inviteCode, opts);
-    const room = await pair.finished();
-
-    // After joining, make sure we get the drive key
-    const roomInfo = await room.getRoomInfo();
-
-    // If room has drive key, use it
-    if (roomInfo && roomInfo.driveKey) {
-      room.driveKey = roomInfo.driveKey;
-      // Ensure drive is initialized with this key
-      await room._initializeDrive();
+    if (!store) {
+      throw new Error('Corestore is required');
     }
 
-    return room;
+    if (!inviteCode) {
+      throw new Error('Invite code is required');
+    }
+
+    console.log(`Joining room with invite code: ${inviteCode}`);
+
+    try {
+      // Create pairing instance
+      const pair = RoomBase.pair(store, inviteCode, opts);
+
+      // Wait for pairing to complete
+      const room = await pair.finished();
+      console.log('Pairing completed successfully');
+
+      // Wait for room to be fully ready
+      await room.ready();
+      console.log('Room is ready');
+
+      // After joining, make sure we get the room info
+      const roomInfo = await room.getRoomInfo();
+      console.log('Room info retrieved:', roomInfo ? roomInfo.id : 'no info');
+
+      // If room has drive key, use it
+      if (roomInfo && roomInfo.driveKey) {
+        room.driveKey = roomInfo.driveKey;
+        console.log(`Found drive key in room metadata: ${room.driveKey}`);
+
+        // Initialize drive with the key we found
+        const driveInitResult = await room._initializeDrive();
+        console.log(`Drive initialization result: ${driveInitResult ? 'success' : 'failure'}`);
+      } else {
+        // Try to initialize a new drive
+        console.log('No drive key found, initializing new drive');
+        await room._initializeDrive();
+      }
+
+      return room;
+    } catch (err) {
+      console.error('Error joining room:', err);
+      throw err;
+    }
+
   }
 }
-
 function noop() { }
 
 export default RoomBase

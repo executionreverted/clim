@@ -1,17 +1,24 @@
-// source/components/RoomFiles/FileList.js - Memory optimized version
-
+// Improved FileList component with safer path handling
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
-import path from 'path';
 import { filesize } from 'filesize';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 
-// Memoized file item to avoid unnecessary rerenders
+// Helper function to safely get basename without using path module
+const getBasename = (filepath) => {
+  if (!filepath) return 'Unknown';
+  const parts = filepath.split('/');
+  return parts[parts.length - 1] || parts[parts.length - 2] || 'Unknown';
+};
+
+// Memoized file item with safer path handling
 const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
-  // Extract file properties safely
-  const name = file.name || path.basename(file.path) || 'Unknown';
+  if (!file) return null;
+
+  // Extract file properties safely with fallbacks
+  const name = file.name || getBasename(file.path || '') || 'Unknown';
   const size = file.size ? filesize(file.size) : 'Unknown size';
-  const isDirectory = file.isDirectory;
+  const isDirectory = !!file.isDirectory;
 
   // Determine icon and color based on file type
   const icon = isDirectory ? '📁' : '📄';
@@ -31,12 +38,12 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   // Only re-render if these properties changed
   return (
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.file.path === nextProps.file.path &&
-    prevProps.file.size === nextProps.file.size
+    prevProps.file?.path === nextProps.file?.path &&
+    prevProps.file?.size === nextProps.file?.size
   );
 });
 
-// Main component
+// Improved FileList with better error handling
 const FileList = ({
   files = [],
   selectedIndex = 0,
@@ -54,18 +61,38 @@ const FileList = ({
     textColor,
     mutedTextColor,
     borderColor,
-    activeBorderColor
+    activeBorderColor,
   } = currentTheme.colors;
+
+  // Validate files array to prevent errors
+  const validFiles = Array.isArray(files) ? files : [];
+
+  // Validate indices
+  const safeSelectedIndex = Math.min(
+    Math.max(0, selectedIndex),
+    validFiles.length > 0 ? validFiles.length - 1 : 0
+  );
+
+  const safeVisibleStartIndex = Math.min(
+    Math.max(0, visibleStartIndex),
+    Math.max(0, validFiles.length - maxVisibleFiles)
+  );
 
   // Determine border color based on focus
   const boxBorderColor = isFocused ? activeBorderColor : borderColor;
 
   // Check if we need to show pagination indicators
-  const showUpIndicator = visibleStartIndex > 0;
-  const showDownIndicator = visibleStartIndex + maxVisibleFiles < files.length;
+  const showUpIndicator = safeVisibleStartIndex > 0;
+  const showDownIndicator = safeVisibleStartIndex + maxVisibleFiles < validFiles.length;
 
   // Get visible files based on current scroll position
-  const visibleFiles = files.slice(visibleStartIndex, visibleStartIndex + maxVisibleFiles);
+  const visibleFiles = validFiles.slice(
+    safeVisibleStartIndex,
+    safeVisibleStartIndex + maxVisibleFiles
+  );
+
+  // Format the current path for display
+  const displayPath = getBasename(currentPath) || 'Files';
 
   return (
     <Box
@@ -78,14 +105,14 @@ const FileList = ({
     >
       <Box marginBottom={1}>
         <Text bold wrap="truncate">
-          {path.basename(currentPath) || 'Files'} ({files.length} items)
+          {displayPath} ({validFiles.length} {validFiles.length === 1 ? 'item' : 'items'})
         </Text>
       </Box>
 
-      {files.length === 0 ? (
+      {validFiles.length === 0 ? (
         <Box>
           <Text color={mutedTextColor} italic>
-            This folder is empty
+            {currentPath === '/' ? 'Root directory is empty' : 'This folder is empty'}
           </Text>
         </Box>
       ) : (
@@ -93,19 +120,21 @@ const FileList = ({
           {/* Up indicator */}
           {showUpIndicator && (
             <Box>
-              <Text color={secondaryColor}>↑ {visibleStartIndex} more item(s)</Text>
+              <Text color={secondaryColor}>↑ {safeVisibleStartIndex} more item(s)</Text>
             </Box>
           )}
 
           {/* Visible files */}
           <Box flexDirection="column">
             {visibleFiles.map((file, index) => {
-              const actualIndex = index + visibleStartIndex;
+              if (!file) return null; // Skip invalid files
+
+              const actualIndex = index + safeVisibleStartIndex;
               return (
                 <FileItem
-                  key={file.path || actualIndex}
+                  key={file.path || `file-${actualIndex}`}
                   file={file}
-                  isSelected={actualIndex === selectedIndex}
+                  isSelected={actualIndex === safeSelectedIndex}
                   isFocused={isFocused}
                   width={width}
                   colors={{
@@ -123,7 +152,7 @@ const FileList = ({
           {showDownIndicator && (
             <Box>
               <Text color={secondaryColor}>
-                ↓ {files.length - (visibleStartIndex + maxVisibleFiles)} more item(s)
+                ↓ {validFiles.length - (safeVisibleStartIndex + maxVisibleFiles)} more item(s)
               </Text>
             </Box>
           )}

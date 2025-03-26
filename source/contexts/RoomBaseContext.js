@@ -3,7 +3,7 @@ import React, { useCallback, createContext, useContext, useReducer, useEffect, u
 import fs, { writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
@@ -238,96 +238,167 @@ export function RoomBaseProvider({ children }) {
   const joinInProgress = useRef(false)
   const seenMessageIds = useRef(new Map()); // Map roomId -> Set of seen message IDs
 
+
+  const loadingRooms = useRef(new Set());
   const fileWatchers = useRef(new Map())
 
 
-  // In RoomBaseContext.js - Make sure loadRoomFiles is properly implemented:
-
+  // Simplified loadRoomFiles function for flat file structure
   const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
-    const room = roomInstances.current.get(roomId);
-    if (!room) {
-      console.error(`No room instance found for ID ${roomId}`);
+    if (!roomId) {
+      console.error("No roomId provided to loadRoomFiles");
       return [];
     }
 
-    if (!room.drive) {
-      console.error(`Room ${roomId} has no drive initialized`);
-      // Try to initialize drive if we have a key but drive isn't ready
-      if (room.driveKey) {
-        try {
-          console.log(`Attempting to initialize drive for room ${roomId} with key ${room.driveKey}`);
-          await room._initializeDrive();
-          if (!room.drive) {
-            console.error(`Failed to initialize drive after attempt`);
-            return [];
-          }
-        } catch (err) {
-          console.error(`Error initializing drive: ${err.message}`);
-          return [];
-        }
-      } else {
-        return [];
-      }
+    // Prevent multiple concurrent loads for the same room
+    if (loadingRooms.current.has(roomId)) {
+      console.log(`Skip loading files for ${roomId} - already in progress`);
+      return [];
     }
 
-    dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
+    // Mark this room as currently loading
+    loadingRooms.current.add(roomId);
 
     try {
-      // Get current directory path from state or use default
-      const currentPath = state.currentDirectory[roomId] || directory;
+      const room = roomInstances.current.get(roomId);
 
-      // Log the current path
-      console.log(`Loading files from ${currentPath} for room ${roomId}`);
+      if (!room) {
+        console.error(`No room instance found for ID ${roomId}`);
+        return [];
+      }
 
-      // Update current directory in state
-      dispatch({
-        type: ACTIONS.SET_CURRENT_DIRECTORY,
-        payload: { roomId, path: currentPath }
-      });
+      // Check if drive needs initialization
+      if (!room.drive) {
+        console.log(`Room ${roomId} has no drive initialized, attempting to initialize`);
 
-      // Get files from the drive
-      const files = await room.getFiles(currentPath);
-      console.log(`Found ${files.length} files at ${currentPath}`);
+        // Try to initialize drive if we have a key but drive isn't ready
+        if (room.driveKey) {
+          try {
+            console.log(`Attempting to initialize drive for room ${roomId} with key ${room.driveKey}`);
+            const success = await room._initializeDrive();
+            if (!success) {
+              console.error(`Failed to initialize drive after attempt`);
+              return [];
+            }
+            console.log("Drive initialized successfully");
+          } catch (err) {
+            console.error(`Error initializing drive: ${err.message}`);
+            return [];
+          }
+        } else {
+          console.log("No drive key, cannot initialize drive");
+          return [];
+        }
+      }
 
-      // Update state
-      dispatch({
-        type: ACTIONS.SET_ROOM_FILES,
-        payload: { roomId, files }
-      });
+      // Still no drive after initialization attempts
+      if (!room.drive) {
+        console.error("Drive still not available after initialization attempts");
+        return [];
+      }
 
-      return files;
-    } catch (err) {
-      console.error(`Error loading files for room ${roomId}:`, err);
-      return [];
+      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
+
+      try {
+        // Always use root directory for flat structure
+        console.log(`Loading files from flat structure for room ${roomId}`);
+
+        // Get files from the drive with the simplified flat structure
+        const files = await room.getFiles('/', { recursive: false });
+        console.log(`Found ${files.length} files`);
+
+        // Update state
+        dispatch({
+          type: ACTIONS.SET_ROOM_FILES,
+          payload: { roomId, files }
+        });
+
+        // Always use root for currentDirectory in flat structure
+        dispatch({
+          type: ACTIONS.SET_CURRENT_DIRECTORY,
+          payload: { roomId, path: '/' }
+        });
+
+        return files;
+      } catch (err) {
+        console.error(`Error loading files for room ${roomId}:`, err);
+        return [];
+      } finally {
+        dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
+      }
     } finally {
-      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
+      // Always remove the loading flag to prevent locks
+      loadingRooms.current.delete(roomId);
     }
-  }, [state.currentDirectory]);
+  }, []);
 
+  // Improved setupFileWatcher function that prevents infinite loops
   const setupFileWatcher = useCallback((roomId) => {
     const room = roomInstances.current.get(roomId);
     if (!room || !room.drive) return;
 
     // Remove existing watcher if any
     if (fileWatchers.current.has(roomId)) {
-      fileWatchers.current.get(roomId).destroy().catch(console.error);
+      try {
+        const existingWatcher = fileWatchers.current.get(roomId);
+        existingWatcher.destroy().catch(console.error);
+        fileWatchers.current.delete(roomId);
+      } catch (err) {
+        console.error(`Error cleaning up existing watcher for room ${roomId}:`, err);
+      }
     }
 
+    // Add debounce mechanism to prevent rapid updates
+    const lastUpdateTimes = new Map();
+    const DEBOUNCE_TIME = 5000; // 5 seconds debounce
+
     try {
+      console.log(`Setting up file watcher for room ${roomId}`);
       const watcher = room.watchFiles();
       fileWatchers.current.set(roomId, watcher);
 
-      // Watch for changes and reload files
+      // Create a loading flag specific to this watcher to prevent concurrent loads
+      const isLoading = { value: false };
+
+      // Watch for changes and reload files with debounce
       (async () => {
-        for await (const _change of watcher) {
-          await loadRoomFiles(roomId);
+        for await (const change of watcher) {
+          // Skip if already loading (prevents simultaneous file loads)
+          if (isLoading.value) {
+            console.log('Skipping file reload - already in progress');
+            continue;
+          }
+
+          const now = Date.now();
+          const lastUpdate = lastUpdateTimes.get(roomId) || 0;
+
+          // Debounce logic
+          if (now - lastUpdate > DEBOUNCE_TIME) {
+            console.log(`File change detected in room ${roomId}, reloading files...`);
+            isLoading.value = true;
+
+            try {
+              await loadRoomFiles(roomId);
+              lastUpdateTimes.set(roomId, Date.now());
+            } catch (err) {
+              console.error(`Error reloading files:`, err);
+            } finally {
+              isLoading.value = false;
+            }
+          } else {
+            console.log(`Skipping file reload (debounced) - last update was ${now - lastUpdate}ms ago`);
+          }
         }
-      })().catch(console.error);
+      })().catch(err => {
+        console.error(`File watcher for room ${roomId} error:`, err);
+      });
+
+      return watcher;
     } catch (err) {
       console.error(`Error setting up file watcher for room ${roomId}:`, err);
+      return null;
     }
   }, [loadRoomFiles]);
-
 
 
   const isMessageDuplicate = (roomId, messageId) => {
@@ -536,7 +607,7 @@ export function RoomBaseProvider({ children }) {
     } finally {
       dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
     }
-  }, [loadRoomFiles, state.currentDirectory, state.identity]);
+  }, [state.currentDirectory, state.identity]);
 
   const downloadFile = useCallback(async (roomId, path, saveAs = null) => {
     const room = roomInstances.current.get(roomId);
@@ -586,7 +657,7 @@ export function RoomBaseProvider({ children }) {
       console.error(`Error deleting file from room ${roomId}:`, err);
       return false;
     }
-  }, [loadRoomFiles]);
+  }, []);
 
 
   const createDirectory = useCallback(async (roomId, path) => {
@@ -606,7 +677,7 @@ export function RoomBaseProvider({ children }) {
       console.error(`Error creating directory in room ${roomId}:`, err);
       return false;
     }
-  }, [loadRoomFiles]);
+  }, []);
 
   // Navigate to a different directory within a room
   const navigateDirectory = useCallback((roomId, path) => {
@@ -617,7 +688,7 @@ export function RoomBaseProvider({ children }) {
 
     // Reload files from the new path
     return loadRoomFiles(roomId, path);
-  }, [loadRoomFiles]);
+  }, []);
 
   useEffect(() => {
     // Set up file watchers for existing rooms
@@ -872,6 +943,7 @@ export function RoomBaseProvider({ children }) {
 
       await room.ready();
 
+      await room._initializeDrive();
       // Get room key information
       const roomKey = {
         id: roomId,

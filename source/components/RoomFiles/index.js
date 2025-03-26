@@ -1,5 +1,5 @@
-// source/components/RoomFiles/index.js
-import React, { useEffect, useState, useRef } from "react";
+// Simplified RoomFiles Component for flat file listing
+import React, { useEffect, useState } from "react";
 import { Box, Text, useStdout } from 'ink';
 import { useChat } from "../../contexts/RoomBaseChatContext.js";
 import useKeymap from "../../hooks/useKeymap.js";
@@ -7,21 +7,16 @@ import useThemeUpdate from "../../hooks/useThemeUpdate.js";
 import FileList from "./FileList.js";
 import FilePreview from "./FilePreview.js";
 import NavigationHelp from "./NavigationHelp.js";
-import mime from 'mime-types';
-import path from 'path';
 
 const RoomFiles = ({ onBack }) => {
   const {
     activeRoomId,
     files,
     fileLoading,
-    currentDirectory,
     loadRoomFiles,
-    navigateDirectory,
     uploadFile,
     downloadFile,
-    deleteFile,
-    createDirectory
+    deleteFile
   } = useChat();
 
   const { stdout } = useStdout();
@@ -30,18 +25,12 @@ const RoomFiles = ({ onBack }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [visibleStartIndex, setVisibleStartIndex] = useState(0);
   const [previewScrollOffset, setPreviewScrollOffset] = useState(0);
-  const [isCreateFolderMode, setIsCreateFolderMode] = useState(false);
-  const [folderNameInput, setFolderNameInput] = useState('');
   const [isDeleteConfirmMode, setIsDeleteConfirmMode] = useState(false);
-  const fileInputRef = useRef(null);
 
   const currentTheme = useThemeUpdate();
 
-  // Get files for the active room
+  // Get files for the active room - always flat
   const roomFiles = activeRoomId && files[activeRoomId] ? files[activeRoomId] : [];
-
-  // Get current path for the active room
-  const currentPath = activeRoomId ? (currentDirectory[activeRoomId] || '/') : '/';
 
   // Update terminal dimensions if they change
   useEffect(() => {
@@ -56,18 +45,20 @@ const RoomFiles = ({ onBack }) => {
     };
   }, [stdout]);
 
-  // Load files on component mount
+  // Load files on component mount - just once
   useEffect(() => {
     if (activeRoomId) {
-      loadRoomFiles(activeRoomId, currentPath);
+      loadRoomFiles(activeRoomId, '/');
     }
-  }, [activeRoomId, currentPath, loadRoomFiles]);
+  }, [activeRoomId, loadRoomFiles]);
 
   // Reset selection when files change
   useEffect(() => {
-    setSelectedIndex(0);
-    setVisibleStartIndex(0);
-  }, [roomFiles.length, currentPath]);
+    if (roomFiles.length > 0) {
+      setSelectedIndex(0);
+      setVisibleStartIndex(0);
+    }
+  }, [roomFiles.length]);
 
   // Calculate panel dimensions
   const listWidth = Math.floor(terminalWidth * 0.4);
@@ -80,29 +71,14 @@ const RoomFiles = ({ onBack }) => {
     ? roomFiles[selectedIndex]
     : null;
 
-  // Handle folder creation
-  const handleCreateFolder = () => {
-    if (folderNameInput.trim()) {
-      const newFolderPath = path.join(currentPath, folderNameInput.trim());
-      createDirectory(activeRoomId, newFolderPath)
-        .then(() => {
-          setIsCreateFolderMode(false);
-          setFolderNameInput('');
-        })
-        .catch(err => {
-          console.error('Error creating folder:', err);
-        });
-    }
-    setIsCreateFolderMode(false);
-    setFolderNameInput('');
-  };
-
   // Handle file deletion
   const handleDeleteFile = () => {
     if (selectedFile) {
       deleteFile(activeRoomId, selectedFile.path)
         .then(() => {
           setIsDeleteConfirmMode(false);
+          // Reload files after deletion
+          loadRoomFiles(activeRoomId, '/');
         })
         .catch(err => {
           console.error('Error deleting file:', err);
@@ -125,7 +101,7 @@ const RoomFiles = ({ onBack }) => {
   // Define keymap handlers
   const handlers = {
     navigateUp: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       const newIndex = Math.max(0, selectedIndex - 1);
       setSelectedIndex(newIndex);
 
@@ -135,7 +111,7 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     navigateDown: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       const newIndex = Math.min(roomFiles.length - 1, selectedIndex + 1);
       setSelectedIndex(newIndex);
 
@@ -145,13 +121,13 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     pageUp: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       const newIndex = Math.max(0, selectedIndex - maxVisibleFiles);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, newIndex - Math.floor(maxVisibleFiles / 2)));
     },
     pageDown: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       const newIndex = Math.min(roomFiles.length - 1, selectedIndex + maxVisibleFiles);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, Math.min(
@@ -160,57 +136,30 @@ const RoomFiles = ({ onBack }) => {
       )));
     },
     openDir: () => {
-      if (isCreateFolderMode) {
-        handleCreateFolder();
-        return;
-      }
       if (isDeleteConfirmMode) {
         handleDeleteFile();
         return;
       }
-      if (selectedFile && selectedFile.isDirectory) {
-        navigateDirectory(activeRoomId, selectedFile.path);
-      }
-    },
-    parentDir: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) {
-        setIsCreateFolderMode(false);
-        setIsDeleteConfirmMode(false);
-        return;
-      }
-      if (currentPath === '/files' || currentPath === '/') return;
-
-      const parentPath = currentPath.split('/').slice(0, -1).join('/') || '/files';
-      navigateDirectory(activeRoomId, parentPath);
     },
     delete: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       if (selectedFile) {
         setIsDeleteConfirmMode(true);
       }
     },
     download: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       handleDownloadFile();
     },
     previewScrollUp: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode) return;
       setPreviewScrollOffset(Math.max(0, previewScrollOffset - 1));
     },
     previewScrollDown: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
-      setPreviewScrollOffset(prev => prev + 1); // No upper limit needed, FilePreview component will handle it
-    },
-    newFolder: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
-      setIsCreateFolderMode(true);
-      setFolderNameInput('');
+      if (isDeleteConfirmMode) return;
+      setPreviewScrollOffset(prev => prev + 1);
     },
     back: () => {
-      if (isCreateFolderMode) {
-        setIsCreateFolderMode(false);
-        return;
-      }
       if (isDeleteConfirmMode) {
         setIsDeleteConfirmMode(false);
         return;
@@ -219,8 +168,8 @@ const RoomFiles = ({ onBack }) => {
     },
     exit: onBack,
     refresh: () => {
-      if (isCreateFolderMode || isDeleteConfirmMode) return;
-      loadRoomFiles(activeRoomId, currentPath);
+      if (isDeleteConfirmMode) return;
+      loadRoomFiles(activeRoomId, '/');
     }
   };
 
@@ -241,8 +190,8 @@ const RoomFiles = ({ onBack }) => {
         padding={1}
       >
         <Text bold>
-          Room Files: <Text color={currentTheme.colors.secondaryColor}>{currentPath}</Text>
-          {fileLoading ? ' (Loading...)' : `(${roomFiles.length} items)`}
+          Room Files
+          {fileLoading ? ' (Loading...)' : `(${roomFiles.length} files)`}
         </Text>
       </Box>
 
@@ -259,7 +208,7 @@ const RoomFiles = ({ onBack }) => {
           maxVisibleFiles={maxVisibleFiles}
           width={listWidth}
           height={contentHeight}
-          currentPath={currentPath}
+          currentPath="/"
           isFocused={true}
         />
 
@@ -273,35 +222,6 @@ const RoomFiles = ({ onBack }) => {
           downloadFile={downloadFile}
         />
       </Box>
-
-      {/* Folder creation modal */}
-      {isCreateFolderMode && (
-        <Box
-          position="absolute"
-          top={Math.floor(terminalHeight / 2) - 4}
-          left={Math.floor(terminalWidth / 2) - 20}
-          width={40}
-          height={7}
-          borderStyle="round"
-          borderColor={currentTheme.colors.primaryColor}
-          backgroundColor="#000"
-          padding={1}
-          flexDirection="column"
-        >
-          <Text bold>Create New Folder</Text>
-
-          <Box marginTop={1}>
-            <Text>Enter folder name: </Text>
-            <Text color={currentTheme.colors.primaryColor}>{folderNameInput}</Text>
-          </Box>
-
-          <Box marginTop={1} justifyContent="flex-end">
-            <Text color={currentTheme.colors.mutedTextColor}>
-              [Enter] Create | [Esc] Cancel
-            </Text>
-          </Box>
-        </Box>
-      )}
 
       {/* Delete confirmation modal */}
       {isDeleteConfirmMode && selectedFile && (
@@ -320,8 +240,8 @@ const RoomFiles = ({ onBack }) => {
           <Text bold color={currentTheme.colors.errorColor}>Confirm Delete</Text>
 
           <Box marginTop={1} flexDirection="column">
-            <Text>Delete {selectedFile.isDirectory ? 'folder' : 'file'}:</Text>
-            <Text color={currentTheme.colors.secondaryColor}>{selectedFile.name || path.basename(selectedFile.path)}</Text>
+            <Text>Delete file:</Text>
+            <Text color={currentTheme.colors.secondaryColor}>{selectedFile.name}</Text>
           </Box>
 
           <Box marginTop={1} justifyContent="flex-end">
