@@ -348,58 +348,78 @@ export function RoomBaseProvider({ children }) {
       }
     }
 
-    // Add debounce mechanism to prevent rapid updates
-    const lastUpdateTimes = new Map();
-    const DEBOUNCE_TIME = 5000; // 5 seconds debounce
-
-    try {
-      console.log(`Setting up file watcher for room ${roomId}`);
-      const watcher = room.watchFiles();
-      fileWatchers.current.set(roomId, watcher);
-
-      // Create a loading flag specific to this watcher to prevent concurrent loads
-      const isLoading = { value: false };
-
-      // Watch for changes and reload files with debounce
-      (async () => {
-        for await (const change of watcher) {
-          // Skip if already loading (prevents simultaneous file loads)
-          if (isLoading.value) {
-            console.log('Skipping file reload - already in progress');
-            continue;
-          }
-
-          const now = Date.now();
-          const lastUpdate = lastUpdateTimes.get(roomId) || 0;
-
-          // Debounce logic
-          if (now - lastUpdate > DEBOUNCE_TIME) {
-            console.log(`File change detected in room ${roomId}, reloading files...`);
-            isLoading.value = true;
-
-            try {
-              await loadRoomFiles(roomId);
-              lastUpdateTimes.set(roomId, Date.now());
-            } catch (err) {
-              console.error(`Error reloading files:`, err);
-            } finally {
-              isLoading.value = false;
-            }
-          } else {
-            console.log(`Skipping file reload (debounced) - last update was ${now - lastUpdate}ms ago`);
-          }
+    // Setup polling instead of relying only on watcher
+    const pollingInterval = 10000; // Poll every 10 seconds
+    const pollingTimer = setInterval(async () => {
+      try {
+        if (!roomInstances.current.has(roomId)) {
+          clearInterval(pollingTimer);
+          return;
         }
-      })().catch(err => {
-        console.error(`File watcher for room ${roomId} error:`, err);
-      });
 
-      return watcher;
+        const currentRoom = roomInstances.current.get(roomId);
+        if (currentRoom && currentRoom.drive) {
+          // Explicitly update the drive and reload files
+          await currentRoom.updateDrive();
+          await loadRoomFiles(roomId);
+        }
+      } catch (err) {
+        console.error(`Error in file polling for room ${roomId}:`, err);
+      }
+    }, pollingInterval);
+
+    // Store the timer for cleanup
+    fileWatchers.current.set(roomId, {
+      destroy: async () => {
+        clearInterval(pollingTimer);
+        return Promise.resolve();
+      }
+    });
+
+    // Also setup the native watcher if available
+    try {
+      if (room.watchFiles) {
+        console.log(`Setting up native file watcher for room ${roomId}`);
+        const watcher = room.watchFiles();
+
+        if (watcher) {
+          const existingTimer = fileWatchers.current.get(roomId);
+
+          // Combine the timer and watcher cleanup
+          fileWatchers.current.set(roomId, {
+            destroy: async () => {
+              if (existingTimer) {
+                await existingTimer.destroy();
+              }
+
+              try {
+                await watcher.destroy();
+              } catch (err) {
+                console.error(`Error destroying watcher:`, err);
+              }
+              return Promise.resolve();
+            }
+          });
+
+          // Watch for changes
+          (async () => {
+            try {
+              for await (const change of watcher) {
+                console.log(`Change detected in room ${roomId} files`);
+                await loadRoomFiles(roomId);
+              }
+            } catch (err) {
+              console.error(`Error in file watcher for room ${roomId}:`, err);
+            }
+          })();
+        }
+      }
     } catch (err) {
       console.error(`Error setting up file watcher for room ${roomId}:`, err);
-      return null;
     }
-  }, [loadRoomFiles]);
 
+    return fileWatchers.current.get(roomId);
+  }, [loadRoomFiles]);
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -586,6 +606,7 @@ export function RoomBaseProvider({ children }) {
       const fileInfo = await room.uploadFile(fileData, filePath);
 
       if (fileInfo) {
+        await room.updateDrive()
         // Send a message about the file sharing
         await room.sendMessage({
           id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
