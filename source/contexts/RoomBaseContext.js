@@ -8,7 +8,7 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const DRIVE_PATH = path.join(CONFIG_DIR, 'drives/')

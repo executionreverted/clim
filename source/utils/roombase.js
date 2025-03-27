@@ -436,33 +436,35 @@ class RoomBase extends ReadyResource {
   }
 
   async _initializeRoom() {
+    // Use a constant ID "metadata" instead of this.roomId for storing room info
+    const METADATA_ID = "metadata";
+
     const existingRoom = await this.getRoomInfo()
     if (!existingRoom) {
-      // Store basic room info
-      const a = {
-        id: this.roomId,
+      // Store basic room info with constant ID
+      const roomMetadata = {
+        id: METADATA_ID, // Use constant ID for metadata
+        originalRoomId: this.roomId, // Store original ID as a reference
         name: this.roomName,
         createdAt: Date.now(),
         messageCount: 0,
         driveKey: this.driveKey
       }
       try {
-        const dispatchData = dispatch('@roombase/set-metadata', a);
+        const dispatchData = dispatch('@roombase/set-metadata', roomMetadata);
         await this.base.append(dispatchData)
       } catch (e) {
-        writeFileSync('./init', JSON.stringify(e.message))
+        console.error('Error initializing room metadata:', e);
       }
-
     } else {
       // Update local properties from stored values
-      this.roomId = existingRoom.id
+      // Keep using original roomId for local reference
       this.roomName = existingRoom.name
 
       if (existingRoom.driveKey && !this.driveKey) {
         this.driveKey = existingRoom.driveKey;
         await this._initializeDrive();
       }
-
 
       if (!existingRoom.driveKey && this.driveKey) {
         try {
@@ -477,11 +479,8 @@ class RoomBase extends ReadyResource {
           console.error('Error updating room with drive key:', e);
         }
       }
-
-      writeFileSync('./init', JSON.stringify('exist'))
     }
   }
-
   get writerKey() {
     return this.base.local.key
   }
@@ -510,11 +509,10 @@ class RoomBase extends ReadyResource {
 
     try {
       console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
-
-      // Store in both locations for redundancy
+      const METADATA_ID = "metadata";
       let success = false;
 
-      // 1. Store in room metadata (primary location)
+      // 1. Store in room metadata (primary location) with constant ID
       try {
         // Get existing room info
         const room = await this.getRoomInfo();
@@ -531,9 +529,10 @@ class RoomBase extends ReadyResource {
           await this.base.append(metadataDispatch);
           success = true;
         } else {
-          // Create new room metadata
+          // Create new room metadata with constant ID
           const newRoom = {
-            id: this.roomId,
+            id: METADATA_ID,
+            originalRoomId: this.roomId,
             name: this.roomName || 'Unnamed Room',
             createdAt: Date.now(),
             messageCount: 0,
@@ -558,9 +557,9 @@ class RoomBase extends ReadyResource {
 
       // 2. Also store in dedicated drive metadata as backup
       try {
-        // Create or update drive metadata
+        // Create or update drive metadata - also use constant ID here
         const metadata = {
-          id: this.roomId,
+          id: METADATA_ID,
           driveKey: this.driveKey,
           createdAt: Date.now()
         };
@@ -594,16 +593,16 @@ class RoomBase extends ReadyResource {
     }
   }
 
-
+  // --- Fourth part: Modify the _getDriveMetadata method ---
   async _getDriveMetadata() {
     try {
-      return await this.base.view.get('@roombase/drive-metadata', { id: this.roomId });
+      const METADATA_ID = "metadata";
+      return await this.base.view.get('@roombase/drive-metadata', { id: METADATA_ID });
     } catch (err) {
-      writeFileSync('./getDriveMeta', JSON.stringify(err.message))
+      console.error('Error getting drive metadata:', err);
       return null;
     }
   }
-
 
 
   static pair(store, invite, opts) {
@@ -673,7 +672,27 @@ class RoomBase extends ReadyResource {
   }
 
   // ---------- Message API ----------
+  async updateMessageCount(roomId) {
+    try {
+      const METADATA_ID = "metadata";
+      const room = await this.getRoomInfo();
+      if (!room) return 1;
 
+      // Update room metadata with constant ID
+      const updatedRoom = {
+        ...room,
+        messageCount: (room.messageCount || 0) + 1
+      };
+
+      const dispatchData = dispatch('@roombase/set-metadata', updatedRoom);
+      await this.base.append(dispatchData);
+
+      return updatedRoom.messageCount;
+    } catch (err) {
+      console.error('Error updating message count:', err);
+      return 1;
+    }
+  }
   async sendMessage(message) {
     // Make sure base is ready
     await this.base.ready();
@@ -694,6 +713,8 @@ class RoomBase extends ReadyResource {
       // Append to autobase directly
       await this.base.append(dispatchData);
 
+      // Use constant ID for updating room metadata
+      const METADATA_ID = "metadata";
       const room = await this.getRoomInfo();
       if (room) {
         const currentCount = room.messageCount || 0;
@@ -701,7 +722,10 @@ class RoomBase extends ReadyResource {
 
         // Update room metadata with new message count
         try {
-          const dispatchData = dispatch('@roombase/set-metadata', { ...room, messageCount: newCount });
+          const dispatchData = dispatch('@roombase/set-metadata', {
+            ...room,
+            messageCount: newCount
+          });
           await this.base.append(dispatchData);
         } catch (updateErr) {
           console.error("Error updating room count:", updateErr);
@@ -712,6 +736,7 @@ class RoomBase extends ReadyResource {
     } catch (err) {
       console.error(`Error saving message with dispatch:`, err);
       this.emit('mistake', JSON.stringify(err.message))
+      return null;
     }
   }
 
@@ -724,9 +749,12 @@ class RoomBase extends ReadyResource {
 
   async getRoomInfo() {
     try {
-      const s = await this.base.view.get('@roombase/metadata', { id: this.roomId });
-      return s
+      // Use constant ID "metadata" instead of this.roomId
+      const METADATA_ID = "metadata";
+      return await this.base.view.get('@roombase/metadata', { id: METADATA_ID });
     } catch (e) {
+      console.error('Error getting room info:', e);
+      return null;
     }
   }
 
@@ -1355,6 +1383,20 @@ class RoomBase extends ReadyResource {
       try {
         await room.base.update({ wait: true });
         console.log('Base updated with latest metadata');
+
+        // Get room info with constant ID to ensure we get the correct metadata
+        const roomInfo = await room.getRoomInfo();
+        if (roomInfo) {
+          // Update the room name from metadata
+          room.roomName = roomInfo.name || room.roomName;
+
+          // If room has an original ID, use it
+          if (roomInfo.originalRoomId) {
+            room.roomId = roomInfo.originalRoomId;
+          }
+
+          console.log(`Synced room metadata: name=${room.roomName}, id=${room.roomId}`);
+        }
       } catch (updateErr) {
         console.warn('Error updating base:', updateErr);
         // Continue anyway - we'll try to get drive info next
@@ -1367,8 +1409,10 @@ class RoomBase extends ReadyResource {
       // If drive initialization failed, it might be because we need to wait for metadata
       if (!driveInitResult) {
         console.log('Initial drive initialization failed, will retry after room sync');
-
         // We can still return the room - drive will be initialized later when metadata is available
+
+        // Start periodic drive sync with shorter interval for quicker initial connection
+        room.startPeriodicDriveSync(10000); // Check every 10 seconds initially
       }
 
       return room;
