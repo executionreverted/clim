@@ -302,7 +302,7 @@ export function RoomBaseProvider({ children }) {
       try {
         // Always use root directory for flat structure
         console.log(`Loading files from flat structure for room ${roomId}`);
-        await room.updateDrive()
+
         // Get files from the drive with the simplified flat structure
         const files = await room.getFiles('/', { recursive: false });
         console.log(`Found ${files.length} files`);
@@ -348,66 +348,58 @@ export function RoomBaseProvider({ children }) {
       }
     }
 
-    // Setup polling instead of relying only on watcher
+    // Add debounce mechanism to prevent rapid updates
+    const lastUpdateTimes = new Map();
+    const DEBOUNCE_TIME = 5000; // 5 seconds debounce
 
-    const currentRoom = roomInstances.current.get(roomId);
-    if (currentRoom && currentRoom.drive) {
-      // Explicitly update the drive and reload files
-      currentRoom.updateDrive();
-      loadRoomFiles(roomId);
-    }
-
-    // Store the timer for cleanup
-    fileWatchers.current.set(roomId, {
-      destroy: async () => {
-        return Promise.resolve();
-      }
-    });
-
-    // Also setup the native watcher if available
     try {
-      if (room.watchFiles) {
-        console.log(`Setting up native file watcher for room ${roomId}`);
-        const watcher = room.watchFiles();
+      console.log(`Setting up file watcher for room ${roomId}`);
+      const watcher = room.watchFiles();
+      fileWatchers.current.set(roomId, watcher);
 
-        if (watcher) {
-          const existingTimer = fileWatchers.current.get(roomId);
+      // Create a loading flag specific to this watcher to prevent concurrent loads
+      const isLoading = { value: false };
 
-          // Combine the timer and watcher cleanup
-          fileWatchers.current.set(roomId, {
-            destroy: async () => {
-              if (existingTimer) {
-                await existingTimer.destroy();
-              }
+      // Watch for changes and reload files with debounce
+      (async () => {
+        for await (const change of watcher) {
+          // Skip if already loading (prevents simultaneous file loads)
+          if (isLoading.value) {
+            console.log('Skipping file reload - already in progress');
+            continue;
+          }
 
-              try {
-                await watcher.destroy();
-              } catch (err) {
-                console.error(`Error destroying watcher:`, err);
-              }
-              return Promise.resolve();
-            }
-          });
+          const now = Date.now();
+          const lastUpdate = lastUpdateTimes.get(roomId) || 0;
 
-          // Watch for changes
-          (async () => {
+          // Debounce logic
+          if (now - lastUpdate > DEBOUNCE_TIME) {
+            console.log(`File change detected in room ${roomId}, reloading files...`);
+            isLoading.value = true;
+
             try {
-              for await (const change of watcher) {
-                console.log(`Change detected in room ${roomId} files`);
-                await loadRoomFiles(roomId);
-              }
+              await loadRoomFiles(roomId);
+              lastUpdateTimes.set(roomId, Date.now());
             } catch (err) {
-              console.error(`Error in file watcher for room ${roomId}:`, err);
+              console.error(`Error reloading files:`, err);
+            } finally {
+              isLoading.value = false;
             }
-          })();
+          } else {
+            console.log(`Skipping file reload (debounced) - last update was ${now - lastUpdate}ms ago`);
+          }
         }
-      }
+      })().catch(err => {
+        console.error(`File watcher for room ${roomId} error:`, err);
+      });
+
+      return watcher;
     } catch (err) {
       console.error(`Error setting up file watcher for room ${roomId}:`, err);
+      return null;
     }
-
-    return fileWatchers.current.get(roomId);
   }, [loadRoomFiles]);
+
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -594,7 +586,6 @@ export function RoomBaseProvider({ children }) {
       const fileInfo = await room.uploadFile(fileData, filePath);
 
       if (fileInfo) {
-        await room.updateDrive()
         // Send a message about the file sharing
         await room.sendMessage({
           id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
@@ -1377,7 +1368,6 @@ export function RoomBaseProvider({ children }) {
   // Provide the context value
   const contextValue = {
     rooms: state.rooms,
-    roomInstances,
     activeRoom,
     activeRoomId: state.activeRoomId,
     error: state.error,

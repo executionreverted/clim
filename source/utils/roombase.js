@@ -10,14 +10,9 @@ import b4a from 'b4a';
 import { Router, dispatch } from './spec/hyperdispatch/index.js'
 import db from './spec/db/index.js';
 import crypto from 'crypto';
-import path from 'path'
 import { getEncoding } from './spec/hyperdispatch/messages.js'
 import { writeFileSync } from 'fs';
 
-
-/**
- * Class for initiating pairing with a RoomBase
- */
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
     super()
@@ -333,10 +328,6 @@ class RoomBase extends ReadyResource {
           // Store the drive key in room metadata (this will also update room info)
           await this._storeDriveKey();
         }
-
-        // Create root folders for better organization
-        await this._ensureRootFolders();
-
         // Setup drive replication
         await this._setupDriveReplication();
 
@@ -374,13 +365,13 @@ class RoomBase extends ReadyResource {
   }
 
   async _setupDriveReplication() {
-    if (!this.drive || !this.swarm || this.driveKey) return;
+    if (!this.drive || !this.swarm || !this.driveKey) return;
 
     try {
 
       this.driveSwarm = new Hyperswarm()
 
-      this.driveSwarm.on('connection', (socket) => drive.replicate(socket))
+      this.driveSwarm.on('connection', (socket) => this.drive.replicate(socket))
       // Get the drive's discovery key
       const driveDiscoveryKey = this.drive.discoveryKey;
       // Join the swarm with the drive's discovery key
@@ -860,13 +851,13 @@ class RoomBase extends ReadyResource {
       const done = this.drive.findingPeers();
 
       // Join the swarm with the drive's discovery key
-      const discovery = this.driveSwarm.join(this.drive.discoveryKey);
+      const discovery = this.swarm.join(this.drive.discoveryKey);
 
       // Wait for the topic to be fully announced
       await discovery.flushed();
 
       // Wait for connections to be established
-      await this.driveSwarm.flush();
+      await this.swarm.flush();
 
       // Let Hyperdrive know we're done finding peers
       done();
@@ -879,18 +870,14 @@ class RoomBase extends ReadyResource {
   }
 
   async updateDrive() {
-    if (!this.drive) {
-      writeFileSync('./updatedrive', JSON.stringify('nodrive'))
-      return false
-
-    }
+    if (!this.drive) throw new Error('Drive not initialized');
 
     try {
       // First find peers
       await this.findDrivePeers();
 
       // Then update with wait option
-      const updated = await this.drive.update();
+      const updated = await this.drive.update({ wait: true });
 
       return updated;
     } catch (err) {
