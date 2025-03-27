@@ -130,7 +130,7 @@ class RoomBase extends ReadyResource {
 
     // Add Hyperdrive for file sharing
     this.drive = null;
-    this.driveKey = opts.driveKey || null;
+    this.driveKey = null;
     this.driveWatcher = null;
     this.driveStore = opts.driveStore;
     // Register command handlers
@@ -272,6 +272,7 @@ class RoomBase extends ReadyResource {
   }
 
   // Improved implementation for the _initializeDrive method in RoomBase class
+  // Simplified _initializeDrive method
   async _initializeDrive() {
     try {
       console.log('Initializing drive...');
@@ -284,23 +285,73 @@ class RoomBase extends ReadyResource {
 
       await this.driveStore.ready();
 
-      // Try to get drive key from metadata if not provided
-      if (!this.driveKey) {
-        try {
+      // Always try to get drive key from database first
+      let driveKeyFromDb = null;
+
+      try {
+        // First check room metadata (most reliable source)
+        const roomInfo = await this.getRoomInfo();
+        if (roomInfo && roomInfo.driveKey) {
+          driveKeyFromDb = roomInfo.driveKey;
+          console.log(`Found drive key in room metadata: ${driveKeyFromDb}`);
+        } else {
+          // Fall back to dedicated drive metadata
           const driveMetadata = await this._getDriveMetadata();
           if (driveMetadata && driveMetadata.driveKey) {
-            this.driveKey = driveMetadata.driveKey;
-            console.log(`Using existing drive key from metadata: ${this.driveKey}`);
+            driveKeyFromDb = driveMetadata.driveKey;
+            console.log(`Found drive key in drive metadata: ${driveKeyFromDb}`);
           }
-        } catch (err) {
-          console.error('Error fetching drive metadata:', err);
-          // Continue to create a new drive
         }
-      } else {
-        console.log(`Already have drive key: ${this.driveKey}`);
+      } catch (err) {
+        console.warn('Error fetching metadata:', err);
       }
 
-      // Create or open the drive
+      // Decide whether to create a new drive or use existing key
+      if (driveKeyFromDb) {
+        // Use the drive key from database
+        this.driveKey = driveKeyFromDb;
+        console.log(`Using existing drive key from database: ${this.driveKey}`);
+      } else if (this.base.writable && !this.driveKey) {
+        // If we're the room creator and no drive key exists, create a new drive
+        console.log('No drive key found in database and we are room creator - creating new drive');
+        this.drive = new Hyperdrive(this.driveStore);
+        await this.drive.ready();
+
+        // Store the new drive key
+        this.driveKey = this.drive.key.toString('hex');
+        console.log(`Created new drive with key: ${this.driveKey}`);
+
+        // Store the drive key in metadata
+        await this._storeDriveKey();
+
+        // Drive is already initialized, return success
+        await this._setupDriveReplication();
+        return true;
+      } else if (!this.driveKey) {
+        // If we're not the room creator and no drive key is found, wait for it
+        console.log('No drive key found and not room creator - cannot initialize drive yet');
+        console.log('Will retry after metadata sync');
+
+        // Force an update to get latest metadata
+        try {
+          await this.base.update({ wait: true });
+
+          // Check again for drive key
+          const roomInfo = await this.getRoomInfo();
+          if (roomInfo && roomInfo.driveKey) {
+            this.driveKey = roomInfo.driveKey;
+            console.log(`Found drive key after update: ${this.driveKey}`);
+          } else {
+            console.error('Still no drive key found after metadata update');
+            return false;
+          }
+        } catch (updateErr) {
+          console.error('Error updating metadata:', updateErr);
+          return false;
+        }
+      }
+
+      // Now initialize the drive with the key (either from DB or newly created)
       try {
         if (this.driveKey) {
           // Convert from hex string to Buffer if needed
@@ -308,33 +359,33 @@ class RoomBase extends ReadyResource {
             ? Buffer.from(this.driveKey, 'hex')
             : this.driveKey;
 
-          console.log(`Opening drive with existing key: ${this.driveKey}`);
+          console.log(`Opening drive with key: ${this.driveKey}`);
           this.drive = new Hyperdrive(this.driveStore, driveKeyBuffer);
+          await this.drive.ready();
+          console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
+
+          // Verification step
+          const actualKey = this.drive.key.toString('hex');
+          if (actualKey !== this.driveKey) {
+            console.error(`Drive key mismatch! Expected: ${this.driveKey}, Got: ${actualKey}`);
+
+            // Close the drive and try again with correct key
+            await this.drive.close();
+
+            // This is a critical error - drive key should match what we requested
+            throw new Error('Drive key mismatch');
+          }
+
+          // Setup drive replication
+          await this._setupDriveReplication();
+          return true;
         } else {
-          // Create new drive
-          console.log('Creating new hyperdrive...');
-          this.drive = new Hyperdrive(this.driveStore);
+          console.error('No drive key available after all attempts');
+          return false;
         }
-
-        // Wait for the drive to be ready
-        await this.drive.ready();
-        console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
-
-        // If this is a new drive (we didn't have a key before), store the key
-        if (!this.driveKey) {
-          this.driveKey = this.drive.key.toString('hex');
-          console.log(`New drive created with key: ${this.driveKey}`);
-
-          // Store the drive key in room metadata (this will also update room info)
-          await this._storeDriveKey();
-        }
-        // Setup drive replication
-        await this._setupDriveReplication();
-
-        return true;
       } catch (err) {
         console.error('Error initializing drive:', err);
-        this.drive = null; // Clear reference on failure
+        this.drive = null;
         return false;
       }
     } catch (err) {
@@ -342,27 +393,8 @@ class RoomBase extends ReadyResource {
       this.drive = null;
       return false;
     }
-  }  // Helper to ensure root folders exist
-  async _ensureRootFolders() {
-    if (!this.drive) return;
-
-    const rootFolders = ['/files', '/images', '/documents'];
-
-    for (const folder of rootFolders) {
-      try {
-        // Check if folder exists by checking directory marker
-        const exists = await this.drive.exists(folder + '/.hyperdrive-dir');
-
-        if (!exists) {
-          await this.createDirectory(folder);
-          console.log(`Created root folder: ${folder}`);
-        }
-      } catch (err) {
-        console.error(`Error creating root folder ${folder}:`, err);
-        // Continue with other folders
-      }
-    }
   }
+
 
   async _setupDriveReplication() {
     if (!this.drive || !this.swarm || !this.driveKey) return;
@@ -414,7 +446,6 @@ class RoomBase extends ReadyResource {
         messageCount: 0,
         driveKey: this.driveKey
       }
-
       try {
         const dispatchData = dispatch('@roombase/set-metadata', a);
         await this.base.append(dispatchData)
@@ -480,58 +511,89 @@ class RoomBase extends ReadyResource {
     try {
       console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
 
-      // First check if we have an existing record
-      let existingRecord = null;
+      // Store in both locations for redundancy
+      let success = false;
+
+      // 1. Store in room metadata (primary location)
       try {
-        existingRecord = await this._getDriveMetadata();
-      } catch (err) {
-        // Ignore error if no record exists
-      }
-
-      // Create metadata record
-      const metadata = {
-        id: this.roomId,
-        driveKey: this.driveKey,
-        createdAt: Date.now()
-      };
-
-      // Store drive key in dedicated metadata collection
-      const dispatchData = dispatch('@roombase/set-drive-key', metadata);
-      await this.base.append(dispatchData);
-      console.log('Drive key saved to metadata collection');
-
-      // Also update room metadata with drive key
-      try {
+        // Get existing room info
         const room = await this.getRoomInfo();
-        if (room) {
-          // Only update if the drive key is not already set or has changed
-          if (!room.driveKey || room.driveKey !== this.driveKey) {
-            const updatedRoom = {
-              ...room,
-              driveKey: this.driveKey
-            };
 
-            console.log('Updating room metadata with drive key');
-            const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
-            await this.base.append(metadataDispatch);
-            console.log('Room metadata updated with drive key');
-          } else {
-            console.log('Room already has the correct drive key');
-          }
+        if (room) {
+          // Update existing room info with drive key
+          const updatedRoom = {
+            ...room,
+            driveKey: this.driveKey
+          };
+
+          console.log('Updating room metadata with drive key');
+          const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
+          await this.base.append(metadataDispatch);
+          success = true;
         } else {
-          console.warn('Could not find room info to update with drive key');
+          // Create new room metadata
+          const newRoom = {
+            id: this.roomId,
+            name: this.roomName || 'Unnamed Room',
+            createdAt: Date.now(),
+            messageCount: 0,
+            driveKey: this.driveKey
+          };
+
+          console.log('Creating new room metadata with drive key');
+          const metadataDispatch = dispatch('@roombase/set-metadata', newRoom);
+          await this.base.append(metadataDispatch);
+          success = true;
+        }
+
+        // Force an immediate ack to help it spread faster
+        try {
+          await this.base.ack();
+        } catch (ackErr) {
+          console.warn('Error during ack:', ackErr);
         }
       } catch (roomErr) {
-        console.error('Error updating room with drive key:', roomErr);
-        // Continue even if this part fails - the dedicated record is more important
+        console.error('Error storing drive key in room metadata:', roomErr);
       }
 
-      return true;
+      // 2. Also store in dedicated drive metadata as backup
+      try {
+        // Create or update drive metadata
+        const metadata = {
+          id: this.roomId,
+          driveKey: this.driveKey,
+          createdAt: Date.now()
+        };
+
+        console.log('Storing drive key in backup metadata');
+        const driveDispatch = dispatch('@roombase/set-drive-key', metadata);
+        await this.base.append(driveDispatch);
+        success = true;
+
+        // Force an immediate ack
+        try {
+          await this.base.ack();
+        } catch (ackErr) {
+          console.warn('Error during ack:', ackErr);
+        }
+      } catch (driveErr) {
+        console.error('Error storing drive key in drive metadata:', driveErr);
+      }
+
+      // At this point, if we succeeded with at least one storage method, consider it a success
+      if (success) {
+        console.log('Drive key stored successfully');
+        return true;
+      } else {
+        console.error('Failed to store drive key in any metadata location');
+        return false;
+      }
     } catch (err) {
       console.error('Error storing drive key:', err);
       return false;
     }
   }
+
 
   async _getDriveMetadata() {
     try {
@@ -583,6 +645,9 @@ class RoomBase extends ReadyResource {
       }
     })
     this.swarm.join(this.base.discoveryKey)
+
+
+    this.startPeriodicDriveSync();
   }
 
   async createInvite(opts = {}) {
@@ -1286,22 +1351,24 @@ class RoomBase extends ReadyResource {
       await room.ready();
       console.log('Room is ready');
 
-      // After joining, make sure we get the room info
-      const roomInfo = await room.getRoomInfo();
-      console.log('Room info retrieved:', roomInfo ? roomInfo.id : 'no info');
+      // Force an update to get the latest metadata
+      try {
+        await room.base.update({ wait: true });
+        console.log('Base updated with latest metadata');
+      } catch (updateErr) {
+        console.warn('Error updating base:', updateErr);
+        // Continue anyway - we'll try to get drive info next
+      }
 
-      // If room has drive key, use it
-      if (roomInfo && roomInfo.driveKey) {
-        room.driveKey = roomInfo.driveKey;
-        console.log(`Found drive key in room metadata: ${room.driveKey}`);
+      // Try to initialize the drive using existing key from metadata
+      const driveInitResult = await room._initializeDrive();
+      console.log(`Drive initialization result: ${driveInitResult ? 'success' : 'waiting for metadata'}`);
 
-        // Initialize drive with the key we found
-        const driveInitResult = await room._initializeDrive();
-        console.log(`Drive initialization result: ${driveInitResult ? 'success' : 'failure'}`);
-      } else {
-        // Try to initialize a new drive
-        console.log('No drive key found, initializing new drive');
-        await room._initializeDrive();
+      // If drive initialization failed, it might be because we need to wait for metadata
+      if (!driveInitResult) {
+        console.log('Initial drive initialization failed, will retry after room sync');
+
+        // We can still return the room - drive will be initialized later when metadata is available
       }
 
       return room;
@@ -1309,7 +1376,109 @@ class RoomBase extends ReadyResource {
       console.error('Error joining room:', err);
       throw err;
     }
+  }
 
+
+  startPeriodicDriveSync(intervalMs = 30000) {
+    // Clear any existing sync interval
+    if (this._driveSyncInterval) {
+      clearInterval(this._driveSyncInterval);
+    }
+
+    // Set up new sync interval - run syncDrive periodically
+    this._driveSyncInterval = setInterval(async () => {
+      try {
+        // Only try to sync if we don't have a drive yet or haven't accessed it recently
+        const needsSync = !this.drive || (Date.now() - (this._lastDriveAccess || 0) > intervalMs);
+
+        if (needsSync) {
+          console.log('Running periodic drive sync...');
+          await this.syncDrive();
+        }
+      } catch (err) {
+        console.error('Error in periodic drive sync:', err);
+      }
+    }, intervalMs);
+
+    // Return the interval ID for potential cancellation
+    return this._driveSyncInterval;
+  }
+
+  // Add this method to stop periodic syncing
+  stopPeriodicDriveSync() {
+    if (this._driveSyncInterval) {
+      clearInterval(this._driveSyncInterval);
+      this._driveSyncInterval = null;
+      return true;
+    }
+    return false;
+  }
+
+  // Track drive accesses to optimize sync frequency
+  _trackDriveAccess() {
+    this._lastDriveAccess = Date.now();
+  }
+
+  async syncDrive() {
+    // Skip if we already have a working drive
+    if (this.drive) {
+      console.log('Drive already initialized, checking for updates');
+      try {
+        await this.drive.update({ wait: true });
+        console.log('Drive updated');
+        return true;
+      } catch (updateErr) {
+        console.warn('Error updating drive:', updateErr);
+      }
+    }
+
+    try {
+      // Force an update to get the latest metadata
+      await this.base.update({ wait: true });
+
+      // Get the latest room info to see if drive key is available
+      const roomInfo = await this.getRoomInfo();
+
+      if (roomInfo && roomInfo.driveKey) {
+        console.log(`Found drive key in room metadata: ${roomInfo.driveKey}`);
+
+        // Only update our drive key if it's different
+        if (this.driveKey !== roomInfo.driveKey) {
+          console.log(`Updating drive key from ${this.driveKey} to ${roomInfo.driveKey}`);
+          this.driveKey = roomInfo.driveKey;
+        }
+
+        // If we don't have a drive yet, initialize it
+        if (!this.drive) {
+          console.log('Initializing drive with key from metadata');
+          const success = await this._initializeDrive();
+
+          if (!success) {
+            console.error('Failed to initialize drive with key from metadata');
+            return false;
+          }
+
+          console.log('Drive initialized successfully');
+          return true;
+        }
+
+        return true;
+      } else {
+        console.log('No drive key found in metadata');
+
+        // If we're the room creator, we can create a drive
+        if (this.base.writable && !this.drive && !this.driveKey) {
+          console.log('We are room creator, creating new drive');
+          const success = await this._initializeDrive();
+          return success;
+        }
+
+        return false;
+      }
+    } catch (err) {
+      console.error('Error syncing drive:', err);
+      return false;
+    }
   }
 }
 function noop() { }

@@ -8,7 +8,7 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const DRIVE_PATH = path.join(CONFIG_DIR, 'drives/')
@@ -250,13 +250,12 @@ export function RoomBaseProvider({ children }) {
       return [];
     }
 
-    // Prevent multiple concurrent loads for the same room
+    // Prevent multiple concurrent loads
     if (loadingRooms.current.has(roomId)) {
       console.log(`Skip loading files for ${roomId} - already in progress`);
       return [];
     }
 
-    // Mark this room as currently loading
     loadingRooms.current.add(roomId);
 
     try {
@@ -267,53 +266,51 @@ export function RoomBaseProvider({ children }) {
         return [];
       }
 
-      // Check if drive needs initialization
+      // NEW CODE: First try to sync drive if not already initialized
       if (!room.drive) {
-        console.log(`Room ${roomId} has no drive initialized, attempting to initialize`);
+        console.log(`Room ${roomId} has no drive initialized, attempting to sync`);
 
-        // Try to initialize drive if we have a key but drive isn't ready
-        if (room.driveKey) {
-          try {
-            console.log(`Attempting to initialize drive for room ${roomId} with key ${room.driveKey}`);
-            const success = await room._initializeDrive();
-            if (!success) {
-              console.error(`Failed to initialize drive after attempt`);
-              return [];
+        try {
+          // Try to sync drive with latest metadata
+          const syncSuccess = await room.syncDrive();
+
+          if (!syncSuccess) {
+            console.warn('Drive sync was not successful');
+
+            // If we're the room creator, we should try to create a drive
+            if (room.base.writable) {
+              console.log('We are room creator, attempting to initialize drive');
+              await room._initializeDrive();
+            } else {
+              console.warn('Not room creator, waiting for drive key from metadata');
+              // Start periodic sync to keep trying
+              room.startPeriodicDriveSync(15000); // Check every 15 seconds
             }
-            console.log("Drive initialized successfully");
-          } catch (err) {
-            console.error(`Error initializing drive: ${err.message}`);
-            return [];
           }
-        } else {
-          console.log("No drive key, cannot initialize drive");
-          return [];
+        } catch (syncErr) {
+          console.error(`Error syncing drive: ${syncErr.message}`);
         }
       }
 
-      // Still no drive after initialization attempts
+      // If drive is still not available, return empty list
       if (!room.drive) {
-        console.error("Drive still not available after initialization attempts");
+        console.warn("No drive available yet, returning empty file list");
         return [];
       }
 
+      // Rest of your existing loadRoomFiles code...
       dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
 
       try {
-        // Always use root directory for flat structure
         console.log(`Loading files from flat structure for room ${roomId}`);
-
-        // Get files from the drive with the simplified flat structure
         const files = await room.getFiles('/', { recursive: false });
         console.log(`Found ${files.length} files`);
 
-        // Update state
         dispatch({
           type: ACTIONS.SET_ROOM_FILES,
           payload: { roomId, files }
         });
 
-        // Always use root for currentDirectory in flat structure
         dispatch({
           type: ACTIONS.SET_CURRENT_DIRECTORY,
           payload: { roomId, path: '/' }
@@ -327,11 +324,9 @@ export function RoomBaseProvider({ children }) {
         dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
       }
     } finally {
-      // Always remove the loading flag to prevent locks
       loadingRooms.current.delete(roomId);
     }
   }, []);
-
   // Improved setupFileWatcher function that prevents infinite loops
   const setupFileWatcher = useCallback((roomId) => {
     const room = roomInstances.current.get(roomId);
@@ -740,7 +735,6 @@ export function RoomBaseProvider({ children }) {
           roomId: roomKey.id,
           roomName: roomKey.name,
           driveStore: driveStore,
-          driveKey: roomKey.driveKey
         });
 
         await room.ready();
