@@ -11,7 +11,7 @@ import Hypercore from 'hypercore';
 import Hyperswarm from 'hyperswarm';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
 const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs/temp/');
@@ -1002,6 +1002,7 @@ export function RoomBaseProvider({ children }) {
         return createRoom(inviteCode);
       }
     } catch (err) {
+      writeFileSync('./joinerror2', JSON.stringify(err.message))
       console.error(`Error in joinRoom:`, err);
       // Clean up resources on error
       if (store && roomId && !corestores.current.has(roomId)) {
@@ -1011,10 +1012,10 @@ export function RoomBaseProvider({ children }) {
           console.error('Error closing corestore:', closeErr);
         }
       }
-
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to join room: ${err.message}` });
       return null;
     }
+
   };
 
   // Function to leave a room
