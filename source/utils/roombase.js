@@ -581,24 +581,22 @@ class RoomBase extends ReadyResource {
    * @returns {Object} - File metadata including blob ID
    */
   async uploadFile(data, filePath, options = {}) {
-    // Make sure blob store is initialized
     if (!this.blobStore) {
       console.error('Failed to initialize blob store');
       return null;
     }
 
     try {
-      // Extract just the filename from the path
-      const fileName = filePath.includes('/')
-        ? path.basename(filePath)
-        : filePath;
+      const fileName = filePath.includes('/') ? path.basename(filePath) : filePath;
 
       // Upload to hyperblobs and get blob ID
       const blobId = await this.blobStore.put(data);
 
-      // Return file metadata
+      // Log the exact structure of the blob ID for debugging
+      console.log('Blob ID after upload:', blobId);
+
       return {
-        path: fileName, // Just store the filename
+        path: fileName,
         name: fileName,
         size: data.length,
         blobId: blobId,
@@ -623,40 +621,33 @@ class RoomBase extends ReadyResource {
    */
 
   async downloadFile(file, configPath, options = {}) {
-    const { timeout = 60000 } = options; // Default 60s timeout
+    const { timeout = 60000 } = options;
     let blobRef = file;
-    let downloadStore = null;
     let remoteCore = null;
     let topic = null;
 
-
     const tempDir = path.join(configPath, `hypercore-download-${Date.now()}`);
-    console.log('Download request for blob:',
-      typeof blobRef === 'string' ? blobRef : JSON.stringify(blobRef, null, 2));
+    console.log('Download request for blob:', typeof blobRef === 'string' ? blobRef : JSON.stringify(blobRef, null, 2));
 
     try {
-      // Make sure temporary directory exists
+      // Make sure directories exist
       if (!fs.existsSync(configPath)) {
         fs.mkdirSync(configPath, { recursive: true });
       }
-
-      // Create a temp directory for the download cores
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      // If file is our own blob, use our existing blob store
-      if (this.blobStore &&
-        blobRef.coreKey &&
+      // If file is in our own blob store, use existing blob store
+      if (this.blobStore && blobRef.coreKey &&
         blobRef.coreKey === this.blobCore.key.toString('hex')) {
-        console.log('Using local blob store for file download');
+        console.log('Using local blob store for download');
         try {
-          return await this.blobStore.get(blobRef.blobId);
+          // Ensure blobId is properly formatted
+          const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
+          return await this.blobStore.get(blobId);
         } catch (localErr) {
-
-          writeFileSync('./doerr', JSON.stringify(localErr.message))
           console.error('Error accessing local blob:', localErr);
-          // Continue to try the remote download path
         }
       }
 
@@ -665,61 +656,47 @@ class RoomBase extends ReadyResource {
         ? Buffer.from(blobRef.coreKey, 'hex')
         : blobRef.coreKey;
 
-      // Create corestore for download
-      remoteCore = new Hypercore(tempDir, coreKey);
+      // Create hypercore for download
+      remoteCore = new Hypercore(tempDir, coreKey, { wait: true });
       await remoteCore.ready();
-      await remoteCore.update({ wait: true });
-      // Calculate discovery key and join swarm
 
-      // Join as client only - we want to fetch data, not serve it
-      topic = await this.swarm.join(coreKey, { client: true, server: false });
+      // Join swarm to find peers
+      topic = this.swarm.join(remoteCore.discoveryKey, { client: true, server: false });
+      await topic.flushed(); // Wait until we've fully announced
 
       // Set up connection handler
       const connectionHandler = (conn) => {
-        downloadStore.replicate(conn);
+        remoteCore.replicate(conn);
       };
 
       this.swarm.on('connection', connectionHandler);
 
+      // Wait for peers to connect
       await new Promise(resolve => setTimeout(resolve, 3000));
+      await remoteCore.update({ wait: true });
 
-      try {
-        await remoteCore.update({ wait: true });
-      } catch (e) {
-        writeFileSync('./doerr', JSON.stringify(e.message))
-        console.log('Initial update failed, continuing to wait for peers');
-      }
-
-      // Check if we timed out
       // Create hyperblobs to access the data
       const remoteBlobs = new Hyperblobs(remoteCore);
-
-      // Wait for remoteBlobs to be ready
       await remoteBlobs.ready();
 
-      writeFileSync('./attempt', JSON.stringify(blobRef.blobId))
-      // Try to get the blob
-      const fileData = await remoteBlobs.get(blobRef.blobId, {
+      // Get the blob ID in the correct format
+      const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
+      console.log('Attempting to get blob with ID:', blobId);
+
+      // Download the blob
+      const fileData = await remoteBlobs.get(blobId, {
         wait: true,
-        timeout: 30000 // 30s timeout for blob retrieval
+        timeout: 30000
       });
 
-      writeFileSync('./dowloadedfile', JSON.stringify(fileData))
+      writeFileSync('./filedata', JSON.stringify(fileData))
+      // Clean up
       this.swarm.removeListener('connection', connectionHandler);
-      if (topic) {
-        await topic.destroy().catch(err =>
-          console.error('Error destroying topic:', err));
-      }
+      if (topic) await topic.destroy().catch(noop);
+      if (remoteBlobs && remoteBlobs.close) await remoteBlobs.close().catch(noop);
+      if (remoteCore) await remoteCore.close().catch(noop);
 
-      // Close cores and stores
-      if (remoteBlobs && remoteBlobs.close) {
-        await remoteBlobs.close().catch(noop);
-      }
-      if (remoteCore) {
-        await remoteCore.close().catch(noop);
-      }
-
-      // Remove temp directory after successful download
+      // Remove temp directory
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (rmErr) {
@@ -728,43 +705,19 @@ class RoomBase extends ReadyResource {
 
       return fileData;
     } catch (err) {
+      writeFileSync('./err', JSON.stringify(err.message))
       console.error('Error downloading file:', err);
-      writeFileSync('./doer2', JSON.stringify(err.message))
-      // Clean up resources if an error occurred
+      // Clean up resources
       try {
-        // Remove swarm listeners
         this.swarm.removeAllListeners('connection');
-
-        // Clean up topic
-        if (topic) {
-          await topic.destroy().catch(noop);
-        }
-
-        // Close cores and stores
-        if (remoteCore) {
-          await remoteCore.close().catch(noop);
-        }
-
-        // Remove temp directory
-        if (tempDir) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
+        if (topic) await topic.destroy().catch(noop);
+        if (remoteCore) await remoteCore.close().catch(noop);
+        if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (cleanupErr) {
-
-        writeFileSync('./doerr', JSON.stringify(cleanupErr.message))
         console.error('Error during cleanup:', cleanupErr);
       }
-
       // Return error message as buffer
-      return Buffer.from(`
-Unable to download file: ${blobRef.name || 'unknown'}
-=======================================
-
-The file could not be downloaded because:
-${err.message}
-
-Try again when more peers are online.
-`);
+      return null;
     }
   }
 
