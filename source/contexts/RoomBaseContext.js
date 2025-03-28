@@ -10,6 +10,7 @@ import RoomBase from '../utils/roombase.js';
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
+const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
 
@@ -238,6 +239,7 @@ export function RoomBaseProvider({ children }) {
   const seenMessageIds = useRef(new Map()); // Map roomId -> Set of seen message IDs
 
   const loadingRooms = useRef(new Set());
+  const blobStore = useRef(null)
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -573,6 +575,28 @@ export function RoomBaseProvider({ children }) {
     return loadRoomFiles(roomId);
   }, [loadRoomFiles]);
 
+  const createBlobCore = async () => {
+    const blobsCore = new Corestore(BLOBS_DIR)
+    await blobsCore.ready()
+    corestores.current.set('blobcore', blobsCore)
+    return blobsCore
+  }
+
+  const getBlobStore = async () => {
+    let blobCore = corestores.current.get('blobcore')
+    if (blobCore) {
+      await blobCore.ready()
+    } else {
+      blobCore = await createBlobCore()
+    }
+
+    let exists = blobStore.current;
+    if (exists) return blobStore.current
+
+    blobStore.current = new Hyperblobs(blobCore)
+    return blobStore.current
+  }
+
   const initializeRooms = async (roomKeys) => {
     const roomsWithMessages = [];
 
@@ -588,13 +612,15 @@ export function RoomBaseProvider({ children }) {
         const store = new Corestore(roomStorePath);
         await store.ready();
         corestores.current.set(roomKey.id, store);
+        const blobStore = await getBlobStore()
 
         // Create RoomBase instance with the room-specific corestore
         const room = new RoomBase(store, {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
-          roomName: roomKey.name
+          roomName: roomKey.name,
+          blobStore
         });
 
         await room.ready();

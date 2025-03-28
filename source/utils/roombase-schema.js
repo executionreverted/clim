@@ -42,29 +42,6 @@ template.register({
   }]
 })
 
-
-
-
-// Drive metadata schema
-template.register({
-  name: 'drive-metadata',
-  compact: false,
-  fields: [{
-    name: 'id',
-    type: 'string',
-    required: true
-  }, {
-    name: 'driveKey',
-    type: 'string',
-    required: true
-  }, {
-    name: 'createdAt',
-    type: 'int',
-    required: true
-  }]
-});
-
-// Update metadata schema to include driveKey
 template.register({
   name: 'metadata',
   compact: false,
@@ -84,15 +61,8 @@ template.register({
     name: 'messageCount',
     type: 'int',
     required: false
-  }, {
-    name: 'driveKey',
-    type: 'string',
-    required: false
-  }]
+  },]
 });
-
-
-
 
 
 // Message schema - matches application's message structure exactly
@@ -123,6 +93,14 @@ template.register({
     name: 'received',
     type: 'bool',
     required: false
+  }, {
+    name: 'hasAttachments',
+    type: 'bool',
+    required: false
+  }, {
+    name: 'attachments',
+    type: 'string', // split with ,
+    required: false
   }]
 })
 
@@ -144,13 +122,6 @@ collections.collections.register({
   schema: '@roombase/invite',
   key: ['id']
 })
-
-// Register collection for drive metadata
-collections.collections.register({
-  name: 'drive-metadata',
-  schema: '@roombase/drive-metadata',
-  key: ['id']
-});
 
 collections.collections.register({
   name: 'metadata',
@@ -203,16 +174,6 @@ namespace.register({
   requestType: '@roombase/metadata'
 })
 
-// Register command handlers
-namespace.register({
-  name: 'set-drive-key',
-  requestType: '@roombase/drive-metadata'
-});
-
-namespace.register({
-  name: 'update-drive-metadata',
-  requestType: '@roombase/drive-metadata'
-});
 
 Hyperdispatch.toDisk(hyperdispatch)
 

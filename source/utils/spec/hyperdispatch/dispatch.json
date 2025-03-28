@@ -36,18 +36,6 @@
       "name": "@roombase/set-metadata",
       "requestType": "@roombase/metadata",
       "version": 1
-    },
-    {
-      "id": 6,
-      "name": "@roombase/set-drive-key",
-      "requestType": "@roombase/drive-metadata",
-      "version": 1
-    },
-    {
-      "id": 7,
-      "name": "@roombase/update-drive-metadata",
-      "requestType": "@roombase/drive-metadata",
-      "version": 1
     }
   ]
 }

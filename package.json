@@ -23,6 +23,7 @@
 		"clipboardy": "^4.0.0",
 		"corestore": "^7.0.23",
 		"filesize": "^10.1.6",
+		"hyperblobs": "^2.8.0",
 		"hypercore": "^11.0.48",
 		"hyperdb": "^4.9.4",
 		"hyperdispatch": "^1.0.3",

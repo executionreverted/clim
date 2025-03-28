@@ -48,32 +48,6 @@
       ]
     },
     {
-      "name": "drive-metadata",
-      "namespace": "roombase",
-      "compact": false,
-      "flagsPosition": -1,
-      "fields": [
-        {
-          "name": "id",
-          "required": true,
-          "type": "string",
-          "version": 1
-        },
-        {
-          "name": "driveKey",
-          "required": true,
-          "type": "string",
-          "version": 1
-        },
-        {
-          "name": "createdAt",
-          "required": true,
-          "type": "int",
-          "version": 1
-        }
-      ]
-    },
-    {
       "name": "metadata",
       "namespace": "roombase",
       "compact": false,
@@ -101,12 +75,6 @@
           "name": "messageCount",
           "required": false,
           "type": "int",
-          "version": 1
-        },
-        {
-          "name": "driveKey",
-          "required": false,
-          "type": "string",
           "version": 1
         }
       ]
@@ -151,6 +119,18 @@
           "name": "received",
           "required": false,
           "type": "bool",
+          "version": 1
+        },
+        {
+          "name": "hasAttachments",
+          "required": false,
+          "type": "bool",
+          "version": 1
+        },
+        {
+          "name": "attachments",
+          "required": false,
+          "type": "string",
           "version": 1
         }
       ]

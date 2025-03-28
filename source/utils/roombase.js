@@ -127,8 +127,8 @@ class RoomBase extends ReadyResource {
     this.messageListeners = [];
 
     // Hyperblobs storage setup
-    this.blobStore = null;
-    this.blobCore = null;
+    this.blobStore = opts.blobStore;
+    this.blobCore = opts.blobCore
     this.attachmentWatcher = null;
 
     // Register command handlers
@@ -170,17 +170,6 @@ class RoomBase extends ReadyResource {
       }
       // Then insert the new metadata
       await context.view.insert('@roombase/metadata', data);
-    });
-
-    // Add stub handlers for Hyperdrive-related commands (required by the router)
-    this.router.add('@roombase/set-drive-key', async (data, context) => {
-      // Stub implementation - no-op for Hyperblobs
-      console.log('Ignoring set-drive-key command (using Hyperblobs)');
-    });
-
-    this.router.add('@roombase/update-drive-metadata', async (data, context) => {
-      // Stub implementation - no-op for Hyperblobs
-      console.log('Ignoring update-drive-metadata command (using Hyperblobs)');
     });
   }
 
@@ -273,23 +262,22 @@ class RoomBase extends ReadyResource {
       console.log('Initializing blob store...');
 
       // Create a core for blob storage
-      this.blobCore = this.store.get({ name: 'blobs' });
       await this.blobCore.ready();
 
       // Create the hyperblobs instance
-      this.blobStore = new Hyperblobs(this.blobCore);
+      await this.blobStore.ready()
 
       console.log(`Blob store initialized with key: ${this.blobCore.key.toString('hex')}`);
 
       // Set up blob core replication if swarm exists
-      if (this.swarm) {
-        this.swarm.join(this.blobCore.discoveryKey, {
-          server: true,
-          client: true
-        });
-
-        console.log('Blob store joined to swarm for replication');
-      }
+      // if (this.swarm) {
+      //   this.swarm.join(this.blobCore.discoveryKey, {
+      //     server: true,
+      //     client: true
+      //   });
+      //
+      //   console.log('Blob store joined to swarm for replication');
+      // }
 
       return true;
     } catch (err) {
@@ -422,8 +410,10 @@ class RoomBase extends ReadyResource {
       sender: message.sender || 'Unknown',
       timestamp: message.timestamp || Date.now(),
       system: !!message.system,
-      // Include attachment references from message if present
-      attachments: message.attachments || null
+      // Set hasAttachments flag based on message attachments
+      hasAttachments: !!(message.attachments && message.attachments.length > 0),
+      // Include attachment references
+      attachments: message.attachments.join(',') || ""
     };
 
     try {
@@ -453,7 +443,6 @@ class RoomBase extends ReadyResource {
       this.emit('mistake', JSON.stringify(err.message));
     }
   }
-
   async deleteMessage(messageId) {
     await this.base.append(dispatch('@roombase/delete-message', { id: messageId }));
     return true;
@@ -612,11 +601,8 @@ class RoomBase extends ReadyResource {
   async uploadFile(data, filePath, options = {}) {
     // Make sure blob store is initialized
     if (!this.blobStore) {
-      const initialized = await this._initializeBlobStore();
-      if (!initialized) {
-        console.error('Failed to initialize blob store');
-        return null;
-      }
+      console.error('Failed to initialize blob store');
+      return null;
     }
 
     try {
@@ -709,7 +695,6 @@ class RoomBase extends ReadyResource {
 
       // Close the remote core after we're done
       await ownerBlobCore.close();
-
       return data;
     } catch (err) {
       console.error(`Error downloading file:`, err);
@@ -725,8 +710,11 @@ class RoomBase extends ReadyResource {
     const { limit = 100, recursive = false } = options;
 
     try {
-      // Get messages with attachments
-      const messages = await this.getMessages({ limit: 100 });
+      // Query only messages with attachments - more efficient!
+      const messages = await this.base.view.find('@roombase/messages', {
+        hasAttachments: true
+      }, { limit: limit });
+
       const files = [];
 
       // Extract file metadata from message attachments
