@@ -1,6 +1,9 @@
-// Updated RoomFiles/index.js - Refactored for Hyperblobs
+// Updated RoomFiles/index.js - Enhanced file download feature
 import React, { useEffect, useState, useCallback } from "react";
 import { Box, Text, useStdout } from 'ink';
+import path from 'path';
+import fs from 'fs';
+import download from 'downloads-folder';
 import { useChat } from "../../contexts/RoomBaseChatContext.js";
 import useKeymap from "../../hooks/useKeymap.js";
 import useThemeUpdate from "../../hooks/useThemeUpdate.js";
@@ -17,7 +20,8 @@ const RoomFiles = ({ onBack }) => {
     loadRoomFiles,
     uploadFile,
     downloadFile,
-    deleteFile
+    deleteFile,
+    sendMessage
   } = useChat();
 
   const { stdout } = useStdout();
@@ -84,13 +88,20 @@ const RoomFiles = ({ onBack }) => {
           setIsDeleteConfirmMode(false);
           // Reload files after deletion
           loadRoomFiles(activeRoomId, '/');
+
+          // Send a system message about deletion
+          sendMessage(
+            activeRoomId,
+            `📝 Deleted file: ${selectedFile.name}`,
+            true
+          );
         })
         .catch(err => {
           console.error('Error deleting file:', err);
         });
     }
     setIsDeleteConfirmMode(false);
-  }, [activeRoomId, deleteFile, loadRoomFiles, selectedFile]);
+  }, [activeRoomId, deleteFile, loadRoomFiles, selectedFile, sendMessage]);
 
   // Handle file uploading
   const handleFileUpload = useCallback(async (file) => {
@@ -110,9 +121,39 @@ const RoomFiles = ({ onBack }) => {
   const handleDownloadFile = useCallback(async () => {
     if (selectedFile && !selectedFile.isDirectory) {
       try {
-        await downloadFile(activeRoomId, selectedFile.path, selectedFile.name);
+        // Get the downloads folder path
+        const downloadsPath = download();
+
+        // Construct the full path for saving the file
+        const savePath = path.join(downloadsPath, selectedFile.name);
+
+        // Download the file
+        const fileData = await downloadFile(activeRoomId, selectedFile);
+
+        if (fileData) {
+          // Write the file to the downloads folder
+          await fs.promises.writeFile(savePath, fileData);
+
+          // Show a success message
+          sendMessage(
+            activeRoomId,
+            `📥 Downloaded file: ${selectedFile.name} to Downloads folder`,
+            true
+          );
+        } else {
+          throw new Error('Failed to download file');
+        }
       } catch (err) {
         console.error('Error downloading file:', err);
+
+        // Send an error message to the room
+        if (activeRoomId) {
+          sendMessage(
+            activeRoomId,
+            `❌ Error downloading file: ${selectedFile.name} - ${err.message}`,
+            true
+          );
+        }
       }
     }
   }, [activeRoomId, downloadFile, selectedFile]);

@@ -10,9 +10,10 @@ import Hyperblobs from 'hyperblobs';
 import Hypercore from 'hypercore';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
+const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
 
@@ -468,7 +469,7 @@ export function RoomBaseProvider({ children }) {
 
     try {
       // Download the file using roombase's downloadFile
-      const data = await room.downloadFile(filePathOrRef);
+      const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH);
 
       // If in Node.js environment and saveAs is provided, save to disk
       if (typeof process !== 'undefined' && process.versions && process.versions.node) {

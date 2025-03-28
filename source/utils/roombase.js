@@ -14,7 +14,8 @@ import { getEncoding } from './spec/hyperdispatch/messages.js';
 import { writeFileSync } from 'fs';
 import path from 'path';
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
-import download from 'downloads-folder'; ()
+import download from 'downloads-folder';
+import Hypercore from 'hypercore';
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
     super();
@@ -617,72 +618,35 @@ class RoomBase extends ReadyResource {
    * @param {Object} options - Download options
    * @returns {Buffer} - The file data
    */
-  async downloadFile(filePath, options = {}) {
+  async downloadFile(file, configPath, options = {}) {
     try {
-      // For compatibility with the existing API, we need to handle two cases:
-      // 1. Calling with a filePath string from old code - need to find the message with this attachment
-      // 2. Calling with a blob reference object that has blobId and coreKey
-
-      let blobRef;
-      const downloadsFolder = download()
-      if (typeof filePath === 'string') {
-        // Case 1: filePath is a string from old code - search messages for attachment
-        const fileName = path.basename(filePath);
-        const messages = await this.getMessages({ limit: 100 });
-
-        // Find a message with this attachment
-        for (const msg of messages) {
-          if (msg.attachments && Array.isArray(msg.attachments)) {
-            const matchingAttachment = msg.attachments.find(att =>
-              att.name === fileName || att.path === filePath
-            );
-
-            if (matchingAttachment) {
-              blobRef = matchingAttachment;
-              break;
-            }
-          }
-        }
-
-        if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
-          throw new Error(`File not found: ${filePath}`);
-        }
-      } else if (filePath && typeof filePath === 'object') {
-        // Case 2: filePath is actually a blob reference object
-        blobRef = filePath;
-      } else {
-        throw new Error('Invalid file reference');
-      }
-
-      // Now we have a blob reference with blobId and coreKey
+      let blobRef = file;
 
       // If it's our own blob, use our blobStore directly
       if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
         return await this.blobStore.get(blobRef.blobId, options);
       }
 
-      // Otherwise, we need to get the blob from the owner's store
-      const ownerBlobCore = this.blobStore.get({
-        key: Buffer.from(blobRef.coreKey, 'hex')
-      });
+      // Otherwise, get the blob from the owner's store
+      const ownerBlobCore = new Hypercore(configPath, blobRef.coreKey);
 
-      await ownerBlobCore.ready();
+      await ownerBlobCore.ready(); // Ensure it's ready
 
       const remoteBlobStore = new Hyperblobs(ownerBlobCore);
       const data = await remoteBlobStore.get(blobRef.blobId, {
         wait: true,
-        timeout: options.timeout || 30000
+        timeout: options?.timeout || 100000
       });
 
-      // Close the remote core after we're done
-      await ownerBlobCore.close();
+      await ownerBlobCore.close(); // Close remote core after use
+      await remoteBlobStore?.close()
       return data;
     } catch (err) {
+      writeFileSync('./downloaderror', JSON.stringify(err.message))
       console.error(`Error downloading file:`, err);
       return null;
     }
   }
-
   /**
    * List all files shared in the room
    * Same function name as before, but implementation changed to work with attachments in messages
