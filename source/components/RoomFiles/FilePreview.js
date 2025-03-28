@@ -251,7 +251,7 @@ const FilePreview = ({
       const loadTextContent = async () => {
         try {
           // Load file content safely using the downloadFile function
-          const data = await downloadFile(activeRoomId, file.path || file);
+          const data = null // await downloadFile(activeRoomId, file.path || file);
 
           if (!data) {
             setError('Could not load file content');

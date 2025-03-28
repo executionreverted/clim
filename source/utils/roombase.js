@@ -618,6 +618,7 @@ class RoomBase extends ReadyResource {
    * @param {Object} options - Download options
    * @returns {Buffer} - The file data
    */
+
   async downloadFile(file, configPath, options = {}) {
     try {
       let blobRef = file;
@@ -627,8 +628,9 @@ class RoomBase extends ReadyResource {
         return await this.blobStore.get(blobRef.blobId, options);
       }
 
-      // Otherwise, get the blob from the owner's store
-      const ownerBlobCore = new Hypercore(configPath, blobRef.coreKey);
+      // Farklı bir temp klasörü kullan
+      const tempConfigPath = path.join(configPath, `/tmp/hypercore_${Date.now()}`);
+      const ownerBlobCore = new Hypercore(tempConfigPath, blobRef.coreKey, { createIfMissing: false });
 
       await ownerBlobCore.ready(); // Ensure it's ready
 
@@ -638,15 +640,24 @@ class RoomBase extends ReadyResource {
         timeout: options?.timeout || 100000
       });
 
-      await ownerBlobCore.close(); // Close remote core after use
-      await remoteBlobStore?.close()
+      // Önce remoteBlobStore'u kapat
+      await remoteBlobStore.close();
+
+      // Eğer ownerBlobCore hala açıksa kapat
+      if (!ownerBlobCore.closed) {
+        await ownerBlobCore.close();
+      }
+
       return data;
     } catch (err) {
-      writeFileSync('./downloaderror', JSON.stringify(err.message))
+      const errorMessage = `Error downloading file: ${err.message}\n${err.stack}`;
+      fs.writeFileSync('./downloaderror.log', errorMessage);
+      require('fs').writeFileSync('./downloaderror', JSON.stringify(err.message));
       console.error(`Error downloading file:`, err);
       return null;
     }
   }
+
   /**
    * List all files shared in the room
    * Same function name as before, but implementation changed to work with attachments in messages

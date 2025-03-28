@@ -133,7 +133,9 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     downloadFile,
     deleteFile,
     createDirectory,
-    navigateDirectory
+    navigateDirectory,
+
+    TEMP
   } = useRoomBase();
 
   const {
@@ -532,7 +534,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     downloadFile,
     deleteFile,
     createDirectory,
-    navigateDirectory
+    navigateDirectory,
+    TEMP
   };
 
   return (

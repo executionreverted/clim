@@ -21,7 +21,8 @@ const RoomFiles = ({ onBack }) => {
     uploadFile,
     downloadFile,
     deleteFile,
-    sendMessage
+    sendMessage,
+    TEMP
   } = useChat();
 
   const { stdout } = useStdout();
@@ -128,7 +129,7 @@ const RoomFiles = ({ onBack }) => {
         const savePath = path.join(downloadsPath, selectedFile.name);
 
         // Download the file
-        const fileData = await downloadFile(activeRoomId, selectedFile);
+        const fileData = await downloadFile(selectedFile, TEMP);
 
         if (fileData) {
           // Write the file to the downloads folder

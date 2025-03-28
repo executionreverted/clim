@@ -13,7 +13,7 @@ import Hypercore from 'hypercore';
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
-const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs');
+const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs/temp/');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
 
@@ -1254,7 +1254,8 @@ export function RoomBaseProvider({ children }) {
     downloadFile,
     deleteFile,
     createDirectory,
-    navigateDirectory
+    navigateDirectory,
+    TEMP: REMOTE_BLOBS_PATH
   };
 
   return (
