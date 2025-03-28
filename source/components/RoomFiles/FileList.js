@@ -4,64 +4,60 @@ import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import path from 'path';
+import { writeFileSync } from 'fs';
 
-// Safely get filename without using path module
-const getFilename = (filepath) => {
-  if (!filepath) return 'Unknown';
-
-  // If it's already just a filename, return it directly
-  if (!filepath.includes('/')) return filepath;
-
-  // Otherwise extract the basename
-  return path.basename(filepath);
-};
 
 // Memoized file item component
 // Replace the FileItem component in source/components/RoomFiles/FileList.js
-const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
+const FileItem = memo(({ file, isSelected, isFocused, width, colors, isDownloaded }) => {
   if (!file) return null;
 
   // Extract file properties safely with fallbacks
-  const name = file.name || getFilename(file.path || '') || 'Unknown';
-  const size = file.size ? filesize(file.size) : 'Unknown size';
-  const sender = file.sender || 'Unknown';
-  const timestamp = file.timestamp ? new Date(file.timestamp).toLocaleString() : 'Unknown date';
+  const name = file.name || path.basename(file.path || '') || 'Unknown';
 
-  // For debugging, log object structure when selected
+  // Calculate maximum name length based on available width
+  const maxNameLength = Math.min(10, Math.floor(width * 0.5)); // 50% of available width
+  const displayName = name.length > maxNameLength
+    ? name.substring(0, maxNameLength - 3) + '...'
+    : name;
 
   // Set icon based on file type
   let icon = '📄';
-  if (name.endsWith('.jpg') || name.endsWith('.png') || name.endsWith('.gif')) {
+  if (name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.png') || name.toLowerCase().endsWith('.gif')) {
     icon = '🖼️';
-  } else if (name.endsWith('.pdf')) {
+  } else if (name.toLowerCase().endsWith('.pdf')) {
     icon = '📑';
-  } else if (name.endsWith('.mp3') || name.endsWith('.wav')) {
+  } else if (name.toLowerCase().endsWith('.mp3') || name.toLowerCase().endsWith('.wav')) {
     icon = '🎵';
-  } else if (name.endsWith('.mp4') || name.endsWith('.mov')) {
+  } else if (name.toLowerCase().endsWith('.mp4') || name.toLowerCase().endsWith('.mov')) {
     icon = '🎬';
-  } else if (name.endsWith('.zip') || name.endsWith('.tar')) {
+  } else if (name.toLowerCase().endsWith('.zip') || name.toLowerCase().endsWith('.tar')) {
     icon = '📦';
   }
 
-  const textColor = isSelected ? colors.secondaryColor : colors.textColor;
-
   return (
-    <Box overflow={"hidden"}>
-      <Text overflow={"hidden"} wrap="truncate" color={textColor}>
-        {isSelected && isFocused ? '>' : ' '} {icon} {name}
-        <Text color={colors.mutedTextColor}> ({size})</Text>
-        {isSelected && <Text color={colors.primaryColor}> - From: {sender}</Text>}
+    <Box width={width} overflow="hidden">
+      <Text width={width - 2} wrap="truncate" color={isSelected ? colors.secondaryColor : colors.textColor}>
+        {isSelected && isFocused ? '>' : ' '}
+        {icon}
+        {displayName}
+        {
+          isDownloaded ? 't' : 'f'
+        }
       </Text>
     </Box>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if these properties changed
+  // Memoization logic to prevent unnecessary re-renders
   return (
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.file?.path === nextProps.file?.path &&
+    prevProps.file?.name === nextProps.file?.name &&
     prevProps.file?.size === nextProps.file?.size
   );
 });
+
+
+
 // Main file list component
 const FileList = ({
   files = [],
@@ -70,7 +66,8 @@ const FileList = ({
   maxVisibleFiles = 10,
   width = 40,
   height = 20,
-  isFocused = false
+  isFocused = false,
+  downloadedFiles = {}
 }) => {
   const currentTheme = useThemeUpdate();
   const {
@@ -109,6 +106,9 @@ const FileList = ({
     safeVisibleStartIndex + maxVisibleFiles
   );
 
+
+
+
   return (
     <Box
       width={width}
@@ -145,7 +145,7 @@ const FileList = ({
           )}
 
           {/* Visible files */}
-          <Box flexDirection="column">
+          <Box overflow={"hidden"} flexDirection="column">
             {visibleFiles.map((file, index) => {
               if (!file) return null; // Skip invalid files
 
@@ -157,6 +157,7 @@ const FileList = ({
                   isSelected={actualIndex === safeSelectedIndex}
                   isFocused={isFocused}
                   width={width}
+                  isDownloaded={downloadedFiles[file.name]}
                   colors={{
                     primaryColor,
                     secondaryColor,

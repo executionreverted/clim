@@ -34,7 +34,7 @@ const RoomFiles = ({ onBack }) => {
   const [previewScrollOffset, setPreviewScrollOffset] = useState(0);
   const [isDeleteConfirmMode, setIsDeleteConfirmMode] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
-
+  const [downloadedFiles, setDownloadedFiles] = useState({});
   const currentTheme = useThemeUpdate();
 
   // Get files for the active room
@@ -122,8 +122,15 @@ const RoomFiles = ({ onBack }) => {
   // Handle direct file download
   // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
+
+    const downloadsPath = download();
     if (!selectedFile) {
       return;
+    }
+
+    if (downloadedFiles[selectedFile.name]) {
+      open(downloadsPath)
+      return
     }
 
     try {
@@ -275,6 +282,27 @@ const RoomFiles = ({ onBack }) => {
   // Use the keymap hook
   useKeymap('fileExplorer', handlers);
 
+  useEffect(() => {
+
+    const checkDownloadStatus = async () => {
+      const downloadsPath = download();
+      const statusMap = {};
+
+      for (const file of roomFiles) {
+        const fileName = file.name || path.basename(file.path || '');
+        const downloadPath = path.join(downloadsPath, fileName);
+        fs.writeFileSync('./checkexits', JSON.stringify(downloadPath))
+        statusMap[fileName] = fs.existsSync(downloadPath);
+      }
+
+      setDownloadedFiles(() => Object.assign({}, statusMap));
+
+      fs.writeFileSync('./downloaded', JSON.stringify(statusMap))
+    };
+
+    checkDownloadStatus();
+  }, [files, roomFiles.length]);
+
   return (
     <Box
       flexDirection="column"
@@ -310,6 +338,7 @@ const RoomFiles = ({ onBack }) => {
           width={listWidth}
           height={contentHeight}
           isFocused={true}
+          downloadedFiles={downloadedFiles}
         />
 
         {/* Preview panel */}
