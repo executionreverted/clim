@@ -7,6 +7,7 @@ import { filesize } from 'filesize';
 import { sanitizeTextForTerminal } from './utils.js';
 import path from 'path';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import terminalImage from 'terminal-image';
 
 // Constants for file handling
 const MAX_PREVIEW_LINES = 10;
@@ -46,6 +47,8 @@ const FilePreview = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [totalLines, setTotalLines] = useState(0);
+  const [imagePreview, setImagePreview] = useState("")
+  const [imageLoading, setImageLoading] = useState(false)
   const {
     secondaryColor,
     mutedTextColor,
@@ -54,6 +57,29 @@ const FilePreview = ({
     infoColor,
     borderColor,
   } = useThemeUpdate().colors;
+
+
+  useEffect(() => {
+    if (selectedFile &&
+      (
+        selectedFile.name.endsWith('jpg') ||
+        selectedFile.name.endsWith('png') ||
+        selectedFile.name.endsWith('jpeg')
+      )
+    ) {
+      setImageLoading(true)
+
+      setTimeout(() => {
+        terminalImage.file(selectedFile.path, { width: width - 16 }).then(
+          (prev) => setImagePreview(prev)
+        )
+        setImageLoading(false)
+      }, 200)
+    } else {
+      setImageLoading(false)
+      setImagePreview(null)
+    }
+  }, [selectedFile?.name])
 
 
   // Async function to load file content
@@ -254,9 +280,27 @@ const FilePreview = ({
     }
 
     // For text files with content
+    if (imageLoading || imagePreview) {
+      return (
+        <>
+          <Box flexDirection={"column"} justifyContent={"center"} gap={1} key={"line-image"} width={width - 8}>
+            <Text>
+              Preview
+            </Text>
+            {
+              imageLoading ? <Text marginY={1}>Loading preview...</Text> :
+                <Text flexGrow={1} width={24} height={24}>
+                  {imagePreview}
+                </Text>
+            }
+          </Box>
+        </>
+      );
+    }
+
     if (fileContent) {
       // Split content into lines
-      const lines = fileContent.split('\n');
+      const lines = fileContent.split('\n')
       // Get visible slice based on scroll offset
       const visibleLines = lines.slice(
         previewScrollOffset,
