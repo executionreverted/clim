@@ -11,7 +11,7 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js';
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 import { getEncoding } from './spec/hyperdispatch/messages.js';
-import fs, { writeFileSync } from 'fs';
+import fs, { write, writeFileSync } from 'fs';
 import path from 'path';
 
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
@@ -621,301 +621,118 @@ class RoomBase extends ReadyResource {
    * @param {Object} fileRef - The file reference containing blobId and coreKey
    * @returns {Promise<Buffer>} - The downloaded file data
    */
-  async downloadWithSwarm(fileRef) {
-    if (!fileRef || !fileRef.blobId || !fileRef.coreKey) {
-      throw new Error('Invalid file reference');
-    }
-
-    // Create a temporary hyperswarm and corestore just for this download
-    const tempDir = path.join(
-      os.tmpdir(),
-      `hyperblobs-dl-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
-    );
-    fs.mkdirSync(tempDir, { recursive: true });
-
-    console.log('Created temp directory for swarm download:', tempDir);
-
-    // Create temporary store and swarm
-    const store = new Corestore(tempDir);
-    await store.ready();
-
-    const swarm = new Hyperswarm();
-
-    // Setup replication
-    swarm.on('connection', conn => {
-      store.replicate(conn);
-      console.log('Connected to peer for blob download');
-    });
-
-    try {
-      // Get remote core with the file
-      const coreKey = Buffer.from(fileRef.coreKey, 'hex');
-      const discoveryKey = crypto.createHash('sha256').update(coreKey).digest();
-
-      console.log('Joining swarm with discovery key:', discoveryKey.toString('hex'));
-      const topic = swarm.join(discoveryKey, { server: false, client: true });
-
-      // Create the core and blob store
-      const core = store.get({ key: coreKey });
-      await core.ready();
-
-      console.log('Core ready, waiting for data...');
-
-      // Wait for peers and data (with timeout)
-      const startTime = Date.now();
-      let lastLength = 0;
-
-      while (core.length === 0 || lastLength !== core.length) {
-        // Update last seen length
-        lastLength = core.length;
-
-        // Wait a bit for more data
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Log progress
-        if (core.length > 0) {
-          console.log('Core replication progress:', core.length, 'blocks');
-        }
-
-        // Check timeout (30 seconds)
-        if (Date.now() - startTime > 30000) {
-          if (core.length === 0) {
-            throw new Error('Timeout waiting for core data');
-          } else {
-            console.log('Timeout reached but we have some data, continuing...');
-            break;
-          }
-        }
-      }
-
-      console.log('Core download complete, length:', core.length);
-
-      // Create blob store and get the file
-      const blobs = new Hyperblobs(core);
-      const data = await blobs.get(fileRef.blobId, {
-        wait: true,
-        timeout: 10000
-      });
-
-      console.log('Successfully retrieved blob data, size:', data.length);
-
-      // Clean up
-      await topic.destroy();
-      await swarm.destroy();
-      await store.close();
-
-      // Clean up temp directory
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch (e) {
-        console.error('Could not clean up temp directory:', e);
-      }
-
-      return data;
-    } catch (err) {
-      console.error('Error in swarm download:', err);
-
-      // Clean up on error
-      try {
-        await swarm.destroy();
-        await store.close();
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch (cleanupErr) {
-        console.error('Error during cleanup:', cleanupErr);
-      }
-
-      throw err;
-    }
-  }
-
-
-  // Enhanced downloadFile method using streams for better performance with large files
 
   async downloadFile(file, configPath, options = {}) {
     try {
-      // Ensure we have a valid file reference
       let blobRef = file;
       console.log('Download request for blob:', JSON.stringify(blobRef, null, 2));
 
-      // Method 1: If it's our own blob, use our blobStore directly with stream
-      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
-        console.log('Using local blob store with stream');
-
-        try {
-          // Use createReadStream instead of get for better handling of large files
-          return await this._streamToBuffer(this.blobStore.createReadStream(blobRef.blobId));
-        } catch (localErr) {
-          console.error('Error streaming from local blob store:', localErr);
-          // Continue to other methods
-        }
-      }
-
-      // Method 2: Try to get from remote core directly using stream
-      console.log('Using remote blob store with core:', blobRef.coreKey);
-
-      // Ensure temp directory exists
+      // Replication klasörü varsa oluştur
       if (!fs.existsSync(configPath)) {
         fs.mkdirSync(configPath, { recursive: true });
       }
 
-      try {
-        // Create a unique temp folder for this download
-        const tempConfigPath = path.join(configPath, `tmp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
-        fs.mkdirSync(tempConfigPath, { recursive: true });
-        console.log('Created temp directory:', tempConfigPath);
-
-        // Create Hypercore from the core key
-        let coreKey;
-        try {
-          coreKey = typeof blobRef.coreKey === 'string'
-            ? Buffer.from(blobRef.coreKey, 'hex')
-            : blobRef.coreKey;
-        } catch (e) {
-          console.error('Invalid core key format:', e);
-          throw new Error(`Invalid core key: ${blobRef.coreKey}`);
-        }
-
-        console.log('Creating Hypercore with key and temp path');
-        const ownerBlobCore = new Hypercore(tempConfigPath, coreKey);
-        await ownerBlobCore.ready();
-        console.log('Hypercore ready, length:', ownerBlobCore.length);
-
-        // If we have no data yet but have a swarm, try to get data from peers
-        if (ownerBlobCore.length === 0 && this.swarm) {
-          console.log('Core has no data, attempting to find peers...');
-          const crypto = require('crypto');
-          const discoveryKey = crypto.createHash('sha256').update(coreKey).digest();
-
-          console.log('Joining swarm for discovery key:', discoveryKey.toString('hex'));
-          this.swarm.join(discoveryKey);
-
-          // Wait for data to arrive (with timeout)
-          const startTime = Date.now();
-          while (ownerBlobCore.length === 0) {
-            if (Date.now() - startTime > 20000) {
-              console.log('Timeout waiting for core data');
-              break;
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
-
-        // If we have data in the core now, try to get the blob
-        if (ownerBlobCore.length > 0) {
-          console.log('Creating blob store from core with length:', ownerBlobCore.length);
-          const remoteBlobStore = new Hyperblobs(ownerBlobCore);
-
-          try {
-            // Use stream to get the blob instead of direct get
-            console.log('Creating read stream for blob ID:', JSON.stringify(blobRef.blobId));
-            const stream = remoteBlobStore.createReadStream(blobRef.blobId);
-
-            // Convert stream to buffer
-            const data = await this._streamToBuffer(stream);
-            console.log('Successfully streamed data, size:', data.length);
-
-            // Clean up resources
-            await remoteBlobStore.close();
-            await ownerBlobCore.close();
-
-            return data;
-          } catch (streamErr) {
-            console.error('Error streaming blob:', streamErr);
-            // Clean up before continuing to next method
-            await remoteBlobStore.close();
-            await ownerBlobCore.close();
-          }
-        } else {
-          console.log('Core has no data after waiting');
-          await ownerBlobCore.close();
-        }
-      } catch (method2Err) {
-        console.error('Method 2 failed:', method2Err);
+      // Aynı configPath kullanarak geçici bir dizin oluştur
+      const tempDir = path.join(configPath, 'hypercore-download');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      // Method 3: Try getting directly from store using stream
       try {
-        console.log('Attempting direct store access method');
+        // Core anahtarını hazırla
+        const coreKey = typeof blobRef.coreKey === 'string'
+          ? Buffer.from(blobRef.coreKey, 'hex')
+          : blobRef.coreKey;
 
-        const directCore = this.store.get({
-          key: Buffer.from(blobRef.coreKey, 'hex')
+        // Corestore oluştur
+        const downloadStore = new Corestore(tempDir);
+        await downloadStore.ready();
+
+        // Hypercore oluştur ve hazır olmasını bekle
+        const remoteCore = downloadStore.get({ key: coreKey });
+        await remoteCore.ready();
+
+        // Swarm'a katıl ve peer'leri bul
+        const discoveryKey = crypto.createHash('sha256').update(coreKey).digest();
+        console.log('Actively searching for peers with core:', coreKey.toString('hex'));
+
+        const topic = this.swarm.join(discoveryKey, { client: true, server: false });
+
+        // Swarm bağlantıları için replikasyon başlat
+        this.swarm.on('connection', conn => {
+          downloadStore.replicate(conn);
         });
 
-        await directCore.ready();
-        console.log('Direct core ready, length:', directCore.length);
+        // Senkronizasyonu bekle
+        let timeout = 60000; // 60 saniye bekleyelim
+        const startTime = Date.now();
+        let lastLength = remoteCore.length;
 
-        if (directCore.length > 0) {
-          const directBlobs = new Hyperblobs(directCore);
+        while (Date.now() - startTime < timeout) {
+          await remoteCore.update(); // Verinin güncellenmesini bekle
 
-          try {
-            const stream = directBlobs.createReadStream(blobRef.blobId);
-            const data = await this._streamToBuffer(stream);
-
-            console.log('Successfully streamed from direct store, size:', data.length);
-            await directBlobs.close?.();
-            await directCore.close();
-
-            return data;
-          } catch (directStreamErr) {
-            console.error('Error streaming from direct core:', directStreamErr);
-            await directCore.close();
+          if (remoteCore.length > 0 && remoteCore.length !== lastLength) {
+            console.log(`Remote core updated: ${remoteCore.length} blocks`);
+            lastLength = remoteCore.length;
           }
-        } else {
-          console.log('Direct core has no data');
-          await directCore.close();
+
+          if (remoteCore.length > 0) {
+            break; // Veri geldiyse çık
+          }
+
+          await new Promise(r => setTimeout(r, 1000)); // 1 saniye bekle
         }
-      } catch (directErr) {
-        console.error('Direct store method failed:', directErr);
+
+        if (remoteCore.length === 0) {
+          throw new Error('No data available from peers after 60s timeout');
+        }
+
+        // Blob mağazasını oluştur
+        const remoteBlobs = new Hyperblobs(remoteCore);
+
+        // Blob'u al
+        console.log(`Retrieving blob ID: ${JSON.stringify(blobRef.blobId)}`);
+        const fileData = await remoteBlobs.get(blobRef.blobId, {
+          wait: true,
+          timeout: 30000 // 30 saniye bekleyelim
+        });
+
+        // Swarm bağlantısını temizle
+        this.swarm.removeAllListeners('connection');
+        if (topic) await topic.destroy();
+
+        // Kapatma işlemleri
+        await remoteBlobs.close?.();
+        await remoteCore.close();
+        await downloadStore.close();
+
+        // Geçici klasörü temizle
+        fs.rmSync(tempDir, { recursive: true, force: true });
+
+        return fileData;
+      } catch (err) {
+        console.error('Error downloading via remote core:', err);
+
+        // Yerel blobStore'dan dene
+        if (this.blobStore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
+          console.log('Falling back to local blob store');
+          return await this.blobStore.get(blobRef.blobId);
+        }
+
+        // Kullanıcıya hata mesajı döndür
+        return Buffer.from(`
+      Unable to download file: ${blobRef.name || 'unknown'}
+      =======================================
+
+      The file could not be downloaded because the peer who shared this file is offline.
+      Try again when more peers are online.
+      `);
       }
-
-      // Fallback: Create placeholder with helpful message
-      console.log('All download methods failed, creating placeholder');
-
-      const fallbackContent = `
-Unable to download file: ${blobRef.name}
-=======================================
-
-The file could not be downloaded because:
-1. The peer who shared this file is currently offline
-2. The file data hasn't been replicated to your node yet
-
-File details:
-- Filename: ${blobRef.name}
-- Size: ${blobRef.size} bytes
-- Shared by: ${blobRef.sender}
-- Shared at: ${new Date(blobRef.timestamp).toLocaleString()}
-
-To successfully download this file:
-- Try again when more peers are online
-- Make sure you're connected to the network
-- Ask the original file sharer to come online
-`;
-
-      return Buffer.from(fallbackContent);
-
-    } catch (err) {
-      console.error(`Error downloading file:`, err);
-      return Buffer.from(`Download error: ${err.message}\n\nPlease try again when more peers are online.`);
+    } catch (finalErr) {
+      writeFileSync('./downlo', JSON.stringify(finalErr.message))
+      console.error('Fatal error in downloadFile:', finalErr);
+      return Buffer.from(`Download failed: ${finalErr.message}`);
     }
-  }
-
-  // Helper method to convert stream to buffer
-  async _streamToBuffer(stream) {
-    return new Promise((resolve, reject) => {
-      const chunks = [];
-
-      stream.on('data', chunk => {
-        chunks.push(chunk);
-      });
-
-      stream.on('end', () => {
-        resolve(Buffer.concat(chunks));
-      });
-
-      stream.on('error', err => {
-        reject(err);
-      });
-    });
   }
 
 
