@@ -361,8 +361,8 @@ export function RoomBaseProvider({ children }) {
           console.error(`Error closing corestore for room ${roomId}:`, err);
         });
       }
-      blobStore?.close()
-      blobSwarm?.destroy()
+      blobStore?.close?.()
+      blobSwarm?.destroy?.()
       corestores.current.clear();
     };
   }, []);
