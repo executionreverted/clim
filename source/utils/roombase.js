@@ -60,7 +60,9 @@ class RoomBasePairer extends ReadyResource {
             swarm: this.swarm,
             key: result.key,
             encryptionKey: result.encryptionKey,
-            bootstrap: this.bootstrap
+            bootstrap: this.bootstrap,
+            blobCore: this.blobCore,
+            blobStore: this.blobStore
           });
         }
         this.swarm = null;
@@ -676,7 +678,7 @@ class RoomBase extends ReadyResource {
       // Download the blob
       const fileData = await remoteBlobs.get(blobId, {
         wait: true,
-        timeout: 30000
+        timeout: 0
       });
 
       await localSwarm.destroy()
@@ -695,6 +697,7 @@ class RoomBase extends ReadyResource {
       return fileData;
     } catch (err) {
       console.error('Error downloading file:', err);
+      fs.writeFileSync('./downloaderr', JSON.stringify(err.message))
       try {
         await localSwarm?.removeAllListeners('connection');
         if (topic) await topic.destroy().catch(noop);
@@ -985,6 +988,12 @@ class RoomBase extends ReadyResource {
       console.error(`Error getting blob cores:`, err);
       return [];
     }
+  }
+
+
+  async setBlobstore(opts) {
+    this.blobStore = opts.blobStore;
+    this.blobCore = opts.blobCore
   }
 
   /**
