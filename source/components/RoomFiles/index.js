@@ -74,7 +74,7 @@ const RoomFiles = ({ onBack }) => {
   const listWidth = Math.floor(terminalWidth * 0.4);
   const previewWidth = terminalWidth - listWidth - 4; // Account for borders and spacing
   const contentHeight = terminalHeight - 8; // Account for header, footer, borders
-  const maxVisibleFiles = Math.max(5, contentHeight - 4);
+  const maxVisibleFiles = Math.max(5, contentHeight - 18);
 
   // Get selected file
   const selectedFile = selectedIndex >= 0 && selectedIndex < roomFiles.length
@@ -102,7 +102,22 @@ const RoomFiles = ({ onBack }) => {
         });
     }
     setIsDeleteConfirmMode(false);
-  }, [activeRoomId, deleteFile, loadRoomFiles, selectedFile, sendMessage]);
+  }, [activeRoomId, selectedFile]);
+
+  useEffect(() => {
+    if (selectedIndex >= 0) {
+      // If selection is below visible area
+      if (selectedIndex >= visibleStartIndex + maxVisibleFiles) {
+        setVisibleStartIndex(selectedIndex - maxVisibleFiles + 1);
+      }
+      // If selection is above visible area
+      else if (selectedIndex < visibleStartIndex) {
+        setVisibleStartIndex(selectedIndex);
+      }
+    }
+  }, [selectedIndex, visibleStartIndex, maxVisibleFiles]);
+
+
 
   // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
