@@ -574,30 +574,36 @@ export function RoomBaseProvider({ children }) {
 
     // Just reload all files
     return loadRoomFiles(roomId);
-  }, [loadRoomFiles]);
+  }, []);
 
   const createBlobCore = async () => {
     const blobsCore = new Corestore(BLOBS_DIR)
     await blobsCore.ready()
     corestores.current.set('blobcore', blobsCore)
+    writeFileSync('./blobcorec', JSON.stringify('created'))
     return blobsCore
   }
 
   const getBlobStore = async () => {
-    let blobCore = corestores.current.get('blobcore')
-    if (blobCore) {
-      await blobCore.ready()
-    } else {
-      blobCore = await createBlobCore()
-    }
+    try {
+      let blobCore = corestores.current.get('blobcore')
+      if (!blobCore) {
+        blobCore = await createBlobCore()
+      }
 
-    let exists = blobStore.current;
-    if (exists) return {
-      blobCore: blobCore, blobStore: exists
-    }
+      // Ensure blob store is always created
+      if (!blobStore.current) {
+        blobStore.current = new Hyperblobs(blobCore)
+        await blobStore.current.ready()
+      }
 
-    blobStore.current = new Hyperblobs(blobCore)
-    return { blobCore: blobCore, blobStore: blobStore.current }
+      return {
+        blobCore: blobCore,
+        blobStore: blobStore.current
+      }
+    } catch (er) {
+      writeFileSync('./blobstore', JSON.stringify(er.message))
+    }
   }
 
   const initializeRooms = async (roomKeys) => {
@@ -793,12 +799,14 @@ export function RoomBaseProvider({ children }) {
       const store = new Corestore(roomStorePath);
       await store.ready();
 
+
       const { blobStore, blobCore } = await getBlobStore()
       // Create RoomBase instance with the room-specific corestore
       const room = new RoomBase(store, {
         roomId,
         roomName,
-        blobCore, blobStore
+        blobCore,
+        blobStore
       });
 
       await room.ready();
@@ -828,6 +836,7 @@ export function RoomBaseProvider({ children }) {
       dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
       return roomId;
     } catch (err) {
+      writeFileSync('./creationerr', JSON.stringify(err.message))
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to create room: ${err.message}` });
       return null;
     }

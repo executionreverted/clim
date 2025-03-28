@@ -242,8 +242,6 @@ class RoomBase extends ReadyResource {
   async _open() {
     await this.base.ready();
 
-    // Initialize the blob store
-    await this._initializeBlobStore();
 
     if (this.replicate) await this._replicate();
 
@@ -264,35 +262,6 @@ class RoomBase extends ReadyResource {
     }
 
     await this.base.close();
-  }
-
-  async _initializeBlobStore() {
-    try {
-      console.log('Initializing blob store...');
-
-      // Create a core for blob storage
-      await this.blobCore.ready();
-
-      // Create the hyperblobs instance
-      await this.blobStore.ready()
-
-      console.log(`Blob store initialized with key: ${this.blobCore.key.toString('hex')}`);
-
-      // Set up blob core replication if swarm exists
-      // if (this.swarm) {
-      //   this.swarm.join(this.blobCore.discoveryKey, {
-      //     server: true,
-      //     client: true
-      //   });
-      //
-      //   console.log('Blob store joined to swarm for replication');
-      // }
-
-      return true;
-    } catch (err) {
-      console.error('Error initializing blob store:', err);
-      return false;
-    }
   }
 
   async _initializeRoom() {
@@ -356,6 +325,7 @@ class RoomBase extends ReadyResource {
     }
 
     this.pairing = new BlindPairing(this.swarm);
+
     this.member = this.pairing.addMember({
       discoveryKey: this.base.discoveryKey,
       onadd: async (candidate) => {
@@ -377,12 +347,8 @@ class RoomBase extends ReadyResource {
         }
       }
     });
-    this.swarm.join(this.base.discoveryKey);
 
-    // Also join the swarm with our blob core's discovery key
-    if (this.blobCore) {
-      this.swarm.join(this.blobCore.discoveryKey);
-    }
+    this.swarm.join(this.base.discoveryKey);
   }
 
   async createInvite(opts = {}) {
