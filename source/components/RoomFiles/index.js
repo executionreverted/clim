@@ -74,7 +74,7 @@ const RoomFiles = ({ onBack }) => {
   const listWidth = Math.floor(terminalWidth * 0.4);
   const previewWidth = terminalWidth - listWidth - 4; // Account for borders and spacing
   const contentHeight = terminalHeight - 8; // Account for header, footer, borders
-  const maxVisibleFiles = Math.max(5, contentHeight - 18);
+  const maxVisibleFiles = Math.max(4, contentHeight - 20);
 
   // Get selected file
   const selectedFile = selectedIndex >= 0 && selectedIndex < roomFiles.length
