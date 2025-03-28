@@ -6,6 +6,7 @@ import os from 'os';
 import { randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
+import Hyperblobs from 'hyperblobs';
 
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
@@ -591,10 +592,12 @@ export function RoomBaseProvider({ children }) {
     }
 
     let exists = blobStore.current;
-    if (exists) return blobStore.current
+    if (exists) return {
+      blobCore: blobCore, blobStore: exists
+    }
 
     blobStore.current = new Hyperblobs(blobCore)
-    return blobStore.current
+    return { blobCore: blobCore, blobStore: blobStore.current }
   }
 
   const initializeRooms = async (roomKeys) => {
@@ -612,7 +615,7 @@ export function RoomBaseProvider({ children }) {
         const store = new Corestore(roomStorePath);
         await store.ready();
         corestores.current.set(roomKey.id, store);
-        const blobStore = await getBlobStore()
+        const { blobStore, blobCore } = await getBlobStore()
 
         // Create RoomBase instance with the room-specific corestore
         const room = new RoomBase(store, {
@@ -620,7 +623,8 @@ export function RoomBaseProvider({ children }) {
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
           roomName: roomKey.name,
-          blobStore
+          blobStore,
+          blobCore
         });
 
         await room.ready();
@@ -789,10 +793,12 @@ export function RoomBaseProvider({ children }) {
       const store = new Corestore(roomStorePath);
       await store.ready();
 
+      const { blobStore, blobCore } = await getBlobStore()
       // Create RoomBase instance with the room-specific corestore
       const room = new RoomBase(store, {
         roomId,
-        roomName
+        roomName,
+        blobCore, blobStore
       });
 
       await room.ready();
@@ -857,8 +863,11 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
+        const { blobStore, blobCore } = await getBlobStore()
         // Use the static joinRoom method
-        const room = await RoomBase.joinRoom(store, inviteCode);
+        const room = await RoomBase.joinRoom(store, inviteCode, {
+          blobStore, blobCore
+        });
         await room.ready();
 
         // Only now store the corestore after successful pairing

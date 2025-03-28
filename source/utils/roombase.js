@@ -26,6 +26,8 @@ class RoomBasePairer extends ReadyResource {
     this.onresolve = null;
     this.onreject = null;
     this.room = null;
+    this.blobCore = opts.blobCore;
+    this.blobStore = opts.blobStore
     this.ready().catch(noop);
   }
 
@@ -214,6 +216,13 @@ class RoomBase extends ReadyResource {
           const messageEncoding = getEncoding('@roombase/messages');
           const message = messageEncoding.decode(state);
 
+          if (message.hasAttachments && message.attachments) {
+            try {
+              message.attachments = JSON.parse(message.attachments);
+            } catch (err) {
+              message.attachments = [];
+            }
+          }
           // Get the node source key for identification
           const sourceKey = node.from?.key?.toString('hex');
           const localKey = this.base.local.key.toString('hex');
@@ -403,7 +412,10 @@ class RoomBase extends ReadyResource {
   async sendMessage(message) {
     // Make sure base is ready
     await this.base.ready();
-
+    if (message.attachments && message.attachments.length > 0) {
+      message.hasAttachments = true;
+      message.attachments = JSON.stringify(message.attachments);
+    }
     const msg = {
       id: message.id || `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
       content: message.content || '',
@@ -411,9 +423,9 @@ class RoomBase extends ReadyResource {
       timestamp: message.timestamp || Date.now(),
       system: !!message.system,
       // Set hasAttachments flag based on message attachments
-      hasAttachments: !!(message.attachments && message.attachments.length > 0),
+      hasAttachments: message.hasAttachments,
       // Include attachment references
-      attachments: message.attachments.join(',') || ""
+      attachments: message.attachments || "[]"
     };
 
     try {
@@ -706,45 +718,36 @@ class RoomBase extends ReadyResource {
    * List all files shared in the room
    * Same function name as before, but implementation changed to work with attachments in messages
    */
+  // Enhanced getFiles method
   async getFiles(directory = '/', options = {}) {
-    const { limit = 100, recursive = false } = options;
+    const { recursive = false } = options;
 
     try {
-      // Query only messages with attachments - more efficient!
       const messages = await this.base.view.find('@roombase/messages', {
         hasAttachments: true
-      }, { limit: limit });
+      }, {});
 
       const files = [];
 
-      // Extract file metadata from message attachments
       for (const msg of messages) {
-        if (msg.attachments && Array.isArray(msg.attachments)) {
-          for (const attachment of msg.attachments) {
-            if (attachment && attachment.blobId && attachment.name) {
-              files.push({
-                ...attachment,
-                path: attachment.path || attachment.name,
-                sender: msg.sender,
-                messageId: msg.id,
-                timestamp: attachment.timestamp || msg.timestamp,
-                isDirectory: false
-              });
-            }
+        if (msg.attachments) {
+          const attachmentsParsed = JSON.parse(msg.attachments)
+          for (const attachment of attachmentsParsed) {
+            files.push({
+              ...attachment,
+              sender: msg.sender,
+              timestamp: attachment.timestamp || msg.timestamp
+            });
           }
         }
       }
 
-      // Sort files by timestamp (newest first)
-      return files
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, limit);
+      return files.sort((a, b) => b.timestamp - a.timestamp);
     } catch (err) {
       console.error(`Error listing files:`, err);
       return [];
     }
   }
-
   /**
    * Delete a file from the room
    * @param {string} path - File path or ID to delete
