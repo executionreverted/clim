@@ -34,7 +34,7 @@ const FileItem = memo(({ item, index, selectedIndex, multiSelect, selectedFiles,
   const sizeText = !item.isDirectory ? ` (${filesize(item.size)})` : '';
 
   return (
-    <Box width={width - 4}>
+    <Box overflow={"hidden"} width={width - 4}>
       <Text color={isSelected ? secondaryColor : textColor} wrap="truncate">
         {isCursorSelected} {multiSelect ? multiSelectIndicator : ''} {icon} {displayName}
         <Text color={mutedTextColor}>{sizeText}</Text>
@@ -44,38 +44,20 @@ const FileItem = memo(({ item, index, selectedIndex, multiSelect, selectedFiles,
 });
 
 // Memoized parent directory option
-const ParentDirectoryItem = memo(({ selectedIndex, multiSelect, width }) => {
+const ParentDirectoryItem = memo(({ direction, selectedIndex, multiSelect, width }) => {
   const {
-    primaryColor,
-    secondaryColor,
     textColor,
-    mutedTextColor,
-    errorColor,
     successColor,
-    warningColor,
-    infoColor,
-    borderColor,
-    activeBorderColor,
   } = useThemeUpdate().colors
   return <Box width={width - 4}>
     <Text color={selectedIndex === -1 ? successColor : textColor} wrap="truncate">
       {selectedIndex === -1 ? '>' : ' '} {multiSelect ? '   ' : ''} 📁 ..
+      {selectedIndex > -1 ? direction === 'up' ? '↑ More above' : `↓ More below` : ''}
     </Text>
   </Box>
 });
 
-// Memoized pagination indicator
-const PaginationIndicator = memo(({ direction, count, width }) => {
-  const {
-    secondaryColor,
-  } = useThemeUpdate().colors;
 
-  return <Box width={width - 4}>
-    <Text color={secondaryColor} wrap="truncate">
-      {direction === 'up' ? '↑ More items above' : `↓ More (${count})`}
-    </Text>
-  </Box>
-});
 
 const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, width = 40 }) => {
   const {
@@ -105,15 +87,11 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
         <>
           {/* Parent directory option */}
           <ParentDirectoryItem
+            direction={visibleStartIndex > 0 ? "up" : "down"}
             selectedIndex={selectedIndex}
             multiSelect={multiSelect}
             width={width}
           />
-
-          {/* Pagination indicator */}
-          {visibleStartIndex > 0 && (
-            <PaginationIndicator direction="up" width={width} />
-          )}
 
           {/* Visible files */}
           {files
@@ -131,14 +109,6 @@ const FileList = ({ files, selectedIndex, visibleStartIndex, maxVisibleFiles, wi
               />
             ))}
 
-          {/* Pagination indicator */}
-          {visibleStartIndex + maxVisibleFiles < files.length && (
-            <PaginationIndicator
-              direction="down"
-              count={files.length - visibleStartIndex - maxVisibleFiles}
-              width={width}
-            />
-          )}
         </>
       )}
     </Box>

@@ -79,7 +79,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       onBack && onBack();
     },
     shareFile: () => {
-      if (inputMode) return;
+      if (!activeRoomId || inputMode) return;
       // Important fix: Make sure to clear input and show file explorer
       setInputValue('');
       setShowFileExplorer(true);

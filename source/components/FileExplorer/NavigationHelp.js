@@ -25,6 +25,7 @@ const NavigationHelp = ({ width = 80, showPickOption = true, showMultiSelectOpti
   const pickFileKey = contextBindings.pickFile ? getBindingDescription(contextBindings.pickFile) : 'p';
   const toggleSelectionKey = contextBindings.toggleSelection ? getBindingDescription(contextBindings.toggleSelection) : 'Space';
 
+  const goToDownloadsKey = contextBindings.toggleSelection ? getBindingDescription(contextBindings.goToDownloads) : 'w';
   return (
     <Box
       width={width}
@@ -39,6 +40,7 @@ const NavigationHelp = ({ width = 80, showPickOption = true, showMultiSelectOpti
           <Text color={successColor}> {pageUpKey}/{pageDownKey}</Text>: Jump |
           <Text color={successColor}> {openDirKey}</Text>: Open dir |
           <Text color={successColor}> {parentDirKey}</Text>: Parent dir |
+          <Text color={successColor}> {goToDownloadsKey}</Text>: Downloads dir |
           <Text color={successColor}> {goBackKey}</Text>: Go back
         </Text>
       </Box>

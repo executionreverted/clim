@@ -10,6 +10,7 @@ import useKeymap from '../../hooks/useKeymap.js';
 // Direct import for 'open' package
 import open from 'open';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import download from 'downloads-folder';
 
 const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
   const { stdout } = useStdout();
@@ -41,7 +42,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
 
   // Calculate maximum visible files based on terminal height
   // Subtract 6 for header, borders and help footer
-  const MAX_VISIBLE_FILES = Math.max(5, terminalHeight - 8);
+  const MAX_VISIBLE_FILES = Math.max(4, terminalHeight - 18);
 
   // Update terminal dimensions if they change
   useEffect(() => {
@@ -55,6 +56,19 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
       stdout.off('resize', handleResize);
     };
   }, [stdout]);
+
+  useEffect(() => {
+    if (selectedIndex >= 0) {
+      // If selection is below visible area
+      if (selectedIndex >= visibleStartIndex + MAX_VISIBLE_FILES) {
+        setVisibleStartIndex(selectedIndex - MAX_VISIBLE_FILES + 1);
+      }
+      // If selection is above visible area
+      else if (selectedIndex < visibleStartIndex) {
+        setVisibleStartIndex(selectedIndex);
+      }
+    }
+  }, [selectedIndex, visibleStartIndex, MAX_VISIBLE_FILES]);
 
   // Handle file opening with the system's default application
   const handleOpenFile = async () => {
@@ -79,12 +93,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
 
       // Update visible window if selection would go out of view
       if (newIndex < visibleStartIndex) {
-        // If wrapping to the end, show the last page
-        if (selectedIndex <= -1 && files.length > MAX_VISIBLE_FILES) {
-          setVisibleStartIndex(Math.max(0, files.length - MAX_VISIBLE_FILES));
-        } else {
-          setVisibleStartIndex(Math.max(0, newIndex));
-        }
+        setVisibleStartIndex(Math.max(0, newIndex));
       }
     },
     navigateDown: () => {
@@ -100,6 +109,7 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
         // When wrapping to the top, always show from the beginning
         setVisibleStartIndex(0);
       } else if (newIndex >= visibleStartIndex + MAX_VISIBLE_FILES) {
+        // When going beyond visible area, adjust start index
         setVisibleStartIndex(newIndex - MAX_VISIBLE_FILES + 1);
       }
     },
@@ -164,7 +174,10 @@ const FileExplorerContent = ({ mode = 'browse', multiSelect = false }) => {
         toggleFileSelection(files[selectedIndex]);
       }
     },
-    exit: () => goBack()
+    exit: () => goBack(),
+    goToDownloads: () => {
+      navigateToDirectory({ path: download(), isDirectory: true })
+    }
   };
 
   // Use the keymap hook

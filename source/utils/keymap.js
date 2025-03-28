@@ -32,8 +32,10 @@ const DEFAULT_KEYMAP = {
     refresh: { key: 'r', description: 'Refresh file list' },
     delete: { key: 'x', description: 'Delete file' },
     download: { key: 'd', shift: true, description: 'Download file' },
-    uploadFile: { key: 'u', description: 'Upload file' }
+    uploadFile: { key: 'u', description: 'Upload file' },
+    goToDownloads: { key: 'w', description: 'Go to Downloads folder' }
   },
+
   chat: {
     switchPanel: { key: 'tab', description: 'Switch between panels' },
     focusInput: { key: 'return', description: 'Focus input/submit' },

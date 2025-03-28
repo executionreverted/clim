@@ -7,6 +7,36 @@ import path from 'path';
  * @param {string} dirPath - Directory path to load
  * @returns {Promise<Array>} - Promise resolving to array of file/directory objects
  */
+
+// Natural sort comparison function
+function naturalCompare(a, b) {
+  // Extract numeric prefix from filenames
+  const extractNumber = (str) => {
+    const match = str.match(/^file-(\d+)/);
+    return match ? parseInt(match[1], 10) : Infinity;
+  };
+
+  const numA = extractNumber(a);
+  const numB = extractNumber(b);
+
+  // If both have numeric prefixes, compare numerically
+  if (numA !== Infinity && numB !== Infinity) {
+    return numA - numB;
+  }
+
+  // If one has numeric prefix, prioritize it
+  if (numA !== Infinity) return -1;
+  if (numB !== Infinity) return 1;
+
+  // Fallback to standard string comparison
+  return a.localeCompare(b);
+}
+
+/**
+ * Load directory contents asynchronously and update state
+ * @param {string} dirPath - Directory path to load
+ * @returns {Promise<Array>} - Promise resolving to array of file/directory objects
+ */
 export const loadDirectoryAsync = async (dirPath) => {
   try {
     const itemNames = await fs.readdir(dirPath);
@@ -24,8 +54,6 @@ export const loadDirectoryAsync = async (dirPath) => {
           mtime: stats.mtime
         };
       } catch (err) {
-        // Handle individual file errors gracefully
-        console.error(`Error reading stats for ${itemPath}:`, err);
         return {
           name: item,
           path: itemPath,
@@ -39,17 +67,21 @@ export const loadDirectoryAsync = async (dirPath) => {
 
     const items = await Promise.all(itemPromises);
 
-    // Sort: directories first, then files alphabetically
-    return items.sort((a, b) => {
+    // Sort: directories first, then files with natural numeric sorting
+    const sortedItems = items.sort((a, b) => {
+      // Directories always come first
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
+
+      // For files, use natural comparison
+      return naturalCompare(a.name, b.name);
     });
+
+    return sortedItems;
   } catch (err) {
     throw new Error(`Failed to read directory: ${err.message}`);
   }
 };
-
 /**
  * Read file contents with efficient handling of large files
  * @param {string} filePath - Path to the file
