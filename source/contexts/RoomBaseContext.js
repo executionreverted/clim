@@ -429,6 +429,7 @@ export function RoomBaseProvider({ children }) {
           content: `📄 Shared file: ${attachment.name} (${attachment.size} bytes)`,
           sender: state.identity ? state.identity.username : 'System',
           timestamp: Date.now(),
+          hasAttachments: true,
           attachments: [attachment]
         });
 
@@ -579,21 +580,29 @@ export function RoomBaseProvider({ children }) {
   const createBlobCore = async () => {
     const blobsCore = new Corestore(BLOBS_DIR)
     await blobsCore.ready()
+
+    // Ensure the core is fully initialized
+    const localCore = blobsCore.get({ name: 'blob-core' })
+    await localCore.ready()
+
     corestores.current.set('blobcore', blobsCore)
-    writeFileSync('./blobcorec', JSON.stringify('created'))
-    return blobsCore
+    return { blobsCore, localCore }
   }
 
   const getBlobStore = async () => {
     try {
       let blobCore = corestores.current.get('blobcore')
+      let localCore;
+
       if (!blobCore) {
-        blobCore = await createBlobCore()
+        const result = await createBlobCore()
+        blobCore = result.blobsCore
+        localCore = result.localCore
       }
 
-      // Ensure blob store is always created
+      // Ensure blob store is always created with a ready core
       if (!blobStore.current) {
-        blobStore.current = new Hyperblobs(blobCore)
+        blobStore.current = new Hyperblobs(localCore || blobCore.get({ name: 'blob-core' }))
         await blobStore.current.ready()
       }
 
@@ -601,8 +610,9 @@ export function RoomBaseProvider({ children }) {
         blobCore: blobCore,
         blobStore: blobStore.current
       }
-    } catch (er) {
-      writeFileSync('./blobstore', JSON.stringify(er.message))
+    } catch (err) {
+      console.error('Error initializing blob store:', err)
+      throw err
     }
   }
 
