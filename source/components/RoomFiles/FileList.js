@@ -17,6 +17,7 @@ const getFilename = (filepath) => {
 };
 
 // Memoized file item component
+// Replace the FileItem component in source/components/RoomFiles/FileList.js
 const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   if (!file) return null;
 
@@ -26,8 +27,26 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   const sender = file.sender || 'Unknown';
   const timestamp = file.timestamp ? new Date(file.timestamp).toLocaleString() : 'Unknown date';
 
-  // Set icon and styling
-  const icon = '📄';
+  // For debugging, log object structure when selected
+  if (isSelected && file.blobId) {
+    console.log('Selected file blob reference:',
+      typeof file.blobId === 'object' ? file.blobId : { blobId: file.blobId, coreKey: file.coreKey });
+  }
+
+  // Set icon based on file type
+  let icon = '📄';
+  if (name.endsWith('.jpg') || name.endsWith('.png') || name.endsWith('.gif')) {
+    icon = '🖼️';
+  } else if (name.endsWith('.pdf')) {
+    icon = '📑';
+  } else if (name.endsWith('.mp3') || name.endsWith('.wav')) {
+    icon = '🎵';
+  } else if (name.endsWith('.mp4') || name.endsWith('.mov')) {
+    icon = '🎬';
+  } else if (name.endsWith('.zip') || name.endsWith('.tar')) {
+    icon = '📦';
+  }
+
   const textColor = isSelected ? colors.secondaryColor : colors.textColor;
 
   return (
@@ -35,6 +54,7 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
       <Text wrap="truncate" color={textColor}>
         {isSelected && isFocused ? '>' : ' '} {icon} {name}
         <Text color={colors.mutedTextColor}> ({size})</Text>
+        {isSelected && <Text color={colors.primaryColor}> - From: {sender}</Text>}
       </Text>
     </Box>
   );
@@ -46,7 +66,6 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
     prevProps.file?.size === nextProps.file?.size
   );
 });
-
 // Main file list component
 const FileList = ({
   files = [],

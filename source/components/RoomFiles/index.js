@@ -11,7 +11,7 @@ import FileList from "./FileList.js";
 import FilePreview from "./FilePreview.js";
 import NavigationHelp from "./NavigationHelp.js";
 import FileUpload from "./FileUpload.js";
-
+import open from 'open'
 const RoomFiles = ({ onBack }) => {
   const {
     activeRoomId,
@@ -119,48 +119,93 @@ const RoomFiles = ({ onBack }) => {
   }, [activeRoomId, uploadFile]);
 
   // Handle direct file download
+  // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
+    if (!selectedFile) return;
 
-    writeFileSync('./run', "handleDownloadFile")
-    if (selectedFile) {
+    try {
+      // Log the selected file contents for debugging
+      console.log('Downloading file:', selectedFile);
+
+      // Get the downloads folder path
+      const downloadsPath = download();
+      console.log('Downloads folder path:', downloadsPath);
+
+      // Construct the full path for saving the file
+      const savePath = path.join(downloadsPath, selectedFile.name || 'download.bin');
+      console.log('Will save file to:', savePath);
+
+      // Download the file - ensure we pass the proper blob reference
+      console.log('Requesting download from room:', activeRoomId);
+      let fileData = await downloadFile(activeRoomId, selectedFile);
+
+      // Check if we got data back
+      if (!fileData) {
+        console.error('No file data returned from downloadFile');
+        // Write a log file to help debug
+        fs.writeFileSync('./download-failed.log', JSON.stringify({
+          file: selectedFile,
+          roomId: activeRoomId,
+          timestamp: Date.now()
+        }, null, 2));
+        throw new Error('Failed to download file data');
+      }
+
+      console.log('Received file data, type:', typeof fileData,
+        'is Buffer:', Buffer.isBuffer(fileData),
+        'length:', fileData.length || fileData.byteLength || '(unknown)');
+
+      // Ensure fileData is a proper Buffer
+      if (typeof fileData === 'string') {
+        fileData = Buffer.from(fileData);
+      } else if (!Buffer.isBuffer(fileData)) {
+        // If it's some other object format, try to convert to JSON string and then Buffer
+        fileData = Buffer.from(JSON.stringify(fileData));
+      }
+
+      // Write the file to the downloads folder with explicit error handling
       try {
-        // Get the downloads folder path
-        const downloadsPath = download();
+        console.log('Writing file to:', savePath, 'size:', fileData.length);
+        await fs.promises.writeFile(savePath, fileData);
+        console.log('File written successfully');
 
-        // Construct the full path for saving the file
-        const savePath = path.join(downloadsPath, selectedFile.name);
+        // Verify the file was created
+        const stats = await fs.promises.stat(savePath);
+        console.log('File stats:', stats.size, 'bytes, created at:', stats.birthtime);
+      } catch (writeErr) {
+        console.error('Error writing file:', writeErr);
+        // Try direct synchronous write as fallback
+        console.log('Attempting synchronous write as fallback...');
+        fs.writeFileSync(savePath, fileData);
+        console.log('Sync write completed');
+      }
 
-        // Download the file
-        const fileData = await downloadFile(activeRoomId, selectedFile);
+      // Show a success message
+      sendMessage(
+        activeRoomId,
+        `📥 Downloaded file: ${selectedFile.name} to ${savePath}`,
+        true
+      );
 
-        writeFileSync('./data', JSON.stringify(downloadFile))
-        if (fileData) {
-          // Write the file to the downloads folder
-          await fs.promises.writeFile(savePath, fileData);
-          writeFileSync('./downloaded', JSON.stringify(fileData))
-          // Show a success message
-          sendMessage(
-            activeRoomId,
-            `📥 Downloaded file: ${selectedFile.name} to Downloads folder`,
-            true
-          )
-        }
-      } catch (err) {
-        console.error('Error downloading file:', err);
-        writeFileSync('./downloaderr', JSON.stringify(err.message))
-        // Send an error message to the room
-        if (activeRoomId) {
-          sendMessage(
-            activeRoomId,
-            `❌ Error downloading file: ${selectedFile.name} - ${err.message}`,
-            true
-          );
-        }
+      // Open the downloads folder to show the user where the file is
+      try {
+        await open(downloadsPath);
+      } catch (openErr) {
+        console.error('Could not open downloads folder:', openErr);
+      }
+    } catch (err) {
+      console.error('Error downloading file:', err);
+
+      // Send an error message to the room
+      if (activeRoomId) {
+        sendMessage(
+          activeRoomId,
+          `❌ Error downloading file: ${selectedFile.name} - ${err.message}`,
+          true
+        );
       }
     }
-  }, [activeRoomId, downloadFile, selectedFile]);
-
-  // Define keymap handlers
+  }, [activeRoomId, downloadFile, selectedFile, sendMessage]);
   const handlers = {
     navigateUp: () => {
       if (isDeleteConfirmMode || showUploadDialog) return;

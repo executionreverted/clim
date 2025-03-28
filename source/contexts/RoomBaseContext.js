@@ -466,21 +466,34 @@ export function RoomBaseProvider({ children }) {
   const downloadFile = useCallback(async (roomId, filePathOrRef, saveAs = null) => {
     const room = roomInstances.current.get(roomId);
     if (!room) {
-      writeFileSync('./downloadeddata', "no room")
-      return null
-    };
+      console.error(`No room instance found for ID ${roomId}`);
+      return null;
+    }
 
     try {
+      // Ensure temp directory exists for downloads
+      ensureDirectoryExists(REMOTE_BLOBS_PATH);
+
+      // Log download attempt
+      console.log('Attempting to download file:',
+        filePathOrRef?.name || filePathOrRef?.path || filePathOrRef);
+
       // Download the file using roombase's downloadFile
       const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH);
-      writeFileSync('./downloadeddata', JSON.stringify(data))
+
+      if (!data) {
+        console.error('No data returned from download operation');
+        return null;
+      }
+
+      // Return the downloaded data
       return data;
     } catch (err) {
-      writeFileSync('./downloaderr', JSON.stringify(err.message))
       console.error(`Error downloading file from room ${roomId}:`, err);
       return null;
     }
   }, []);
+
 
   // Updated to use blob references in messages instead of a drive
   const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
