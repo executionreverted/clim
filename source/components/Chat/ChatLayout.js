@@ -25,7 +25,8 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     setShowRoomFiles,
     activeRoomId,
     isLoading,
-    loadingMessage
+    loadingMessage,
+    downloading
   } = useChat();
 
   // Calculate panel widths based on terminal size
@@ -114,6 +115,25 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const viewFilesKey = getBindingDescription(contextBindings.viewFiles);
 
   // Show loading overlay if loading state is true
+  //
+  //
+  //
+  //
+  if (downloading) {
+    return (
+      <Box
+        flexDirection="column"
+        width={width}
+        height={height}
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Box marginBottom={1}>
+          <Loading text={"Downloading file from peer... File will be saved to downloads folder"} width={width} />
+        </Box>
+      </Box>
+    );
+  }
   if (isLoading) {
     return (
       <Box

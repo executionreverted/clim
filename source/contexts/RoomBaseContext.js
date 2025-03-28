@@ -8,6 +8,7 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 import Hyperblobs from 'hyperblobs';
 import Hypercore from 'hypercore';
+import Hyperswarm from 'hyperswarm';
 
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
@@ -37,7 +38,8 @@ const ACTIONS = {
   ADD_ROOM_FILE: 'ADD_ROOM_FILE',
   REMOVE_ROOM_FILE: 'REMOVE_ROOM_FILE',
   SET_FILE_LOADING: 'SET_FILE_LOADING',
-  SET_CURRENT_DIRECTORY: 'SET_CURRENT_DIRECTORY'
+  SET_CURRENT_DIRECTORY: 'SET_CURRENT_DIRECTORY',
+  SET_DOWNLOADING: 'SET_DOWNLOADING',
 };
 
 // Initial state
@@ -51,7 +53,8 @@ const initialState = {
   messageCounts: {}, // roomId -> total message count
   files: {}, // Map roomId -> array of files
   fileLoading: false,
-  currentDirectory: {}
+  currentDirectory: {},
+  downloading: false
 };
 
 // Reducer function
@@ -173,6 +176,12 @@ function reducer(state, action) {
         fileLoading: action.payload
       };
 
+    case ACTIONS.SET_DOWNLOADING:
+      return {
+        ...state,
+        downloading: action.payload
+      };
+
     case ACTIONS.SET_CURRENT_DIRECTORY:
       return {
         ...state,
@@ -243,6 +252,7 @@ export function RoomBaseProvider({ children }) {
 
   const loadingRooms = useRef(new Set());
   const blobStore = useRef(null)
+  const blobSwarm = useRef(null)
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -471,6 +481,8 @@ export function RoomBaseProvider({ children }) {
     }
 
     try {
+
+      dispatch({ type: ACTIONS.SET_DOWNLOADING, payload: true });
       // Ensure temp directory exists for downloads
       ensureDirectoryExists(REMOTE_BLOBS_PATH);
 
@@ -489,8 +501,13 @@ export function RoomBaseProvider({ children }) {
       // Return the downloaded data
       return data;
     } catch (err) {
+
+      dispatch({ type: ACTIONS.SET_DOWNLOADING, payload: false });
       console.error(`Error downloading file from room ${roomId}:`, err);
       return null;
+    }
+    finally {
+      dispatch({ type: ACTIONS.SET_DOWNLOADING, payload: false });
     }
   }, []);
 
@@ -591,37 +608,65 @@ export function RoomBaseProvider({ children }) {
   }, []);
 
   const createBlobCore = async () => {
-    const blobsCore = new Hypercore(BLOBS_DIR)
-    await blobsCore.ready()
+    console.log(`Creating blob core in ${BLOBS_DIR}`);
 
-    corestores.current.set('blobcore', blobsCore)
-    return { blobsCore }
-  }
+    // Ensure blob directory exists
+    if (!fs.existsSync(BLOBS_DIR)) {
+      fs.mkdirSync(BLOBS_DIR, { recursive: true });
+    }
+
+    const blobsCore = new Hypercore(BLOBS_DIR);
+    await blobsCore.ready();
+
+
+    const swarm = new Hyperswarm();
+    const topic = swarm.join(blobsCore.key);
+
+    swarm.on('connection', (conn) => {
+      console.log('Peer connected, sharing...');
+      blobsCore.replicate(conn);
+    });
+    await swarm.flush()
+
+
+    blobSwarm.current = swarm
+    corestores.current.set('blobcore', blobsCore);
+    return { blobsCore };
+  };
 
   const getBlobStore = async () => {
     try {
-      let blobCore = corestores.current.get('blobcore')
+      let blobCore = corestores.current.get('blobcore');
 
       if (!blobCore) {
-        const result = await createBlobCore()
-        blobCore = result.blobsCore
+        console.log('Creating new blob core and store');
+        const result = await createBlobCore();
+        blobCore = result.blobsCore;
+      } else {
+        console.log('Using existing blob core');
       }
 
       // Ensure blob store is always created with a ready core
       if (!blobStore.current) {
-        blobStore.current = new Hyperblobs(blobCore)
-        await blobStore.current.ready()
+        console.log('Creating new Hyperblobs store');
+        blobStore.current = new Hyperblobs(blobCore);
+        await blobStore.current.ready();
+        console.log('Hyperblobs store ready');
       }
 
       return {
         blobCore: blobCore,
         blobStore: blobStore.current
-      }
+      };
     } catch (err) {
-      console.error('Error initializing blob store:', err)
-      throw err
+      console.error('Error initializing blob store:', err);
+      throw err;
     }
-  }
+  };
+
+
+
+
 
   const initializeRooms = async (roomKeys) => {
     const roomsWithMessages = [];
@@ -1255,6 +1300,7 @@ export function RoomBaseProvider({ children }) {
     getConnections,
     loadMoreMessages,
     messageCounts: state.messageCounts,
+    downloading: state.downloading,
 
     files: state.files,
     fileLoading: state.fileLoading,

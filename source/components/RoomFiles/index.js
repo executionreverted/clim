@@ -22,7 +22,8 @@ const RoomFiles = ({ onBack }) => {
     downloadFile,
     deleteFile,
     sendMessage,
-    TEMP
+    TEMP,
+    downloading
   } = useChat();
 
   const { stdout } = useStdout();
@@ -121,60 +122,39 @@ const RoomFiles = ({ onBack }) => {
   // Handle direct file download
   // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      console.log('No file selected to download');
+      return;
+    }
 
     try {
       // Log the selected file contents for debugging
-      console.log('Downloading file:', selectedFile);
+      console.log('Starting download for file:', JSON.stringify(selectedFile, null, 2));
 
       // Get the downloads folder path
       const downloadsPath = download();
-      console.log('Downloads folder path:', downloadsPath);
 
       // Construct the full path for saving the file
       const savePath = path.join(downloadsPath, selectedFile.name || 'download.bin');
-      console.log('Will save file to:', savePath);
 
       // Download the file - ensure we pass the proper blob reference
-      console.log('Requesting download from room:', activeRoomId);
       let fileData = await downloadFile(activeRoomId, selectedFile);
 
       // Check if we got data back
       if (!fileData) {
-        console.error('No file data returned from downloadFile');
-        // Write a log file to help debug
-        fs.writeFileSync('./download-failed.log', JSON.stringify({
-          file: selectedFile,
-          roomId: activeRoomId,
-          timestamp: Date.now()
-        }, null, 2));
         throw new Error('Failed to download file data');
       }
-
-      // Ensure fileData is a proper Buffer
-      if (typeof fileData === 'string') {
-        fileData = Buffer.from(fileData);
-      } else if (!Buffer.isBuffer(fileData)) {
-        // If it's some other object format, try to convert to JSON string and then Buffer
-        fileData = Buffer.from(JSON.stringify(fileData));
-      }
-
-      // Write the file to the downloads folder with explicit error handling
-      try {
-        console.log('Writing file to:', savePath, 'size:', fileData.length);
-        await fs.promises.writeFile(savePath, fileData);
-        console.log('File written successfully');
-
-        // Verify the file was created
-        const stats = await fs.promises.stat(savePath);
-        console.log('File stats:', stats.size, 'bytes, created at:', stats.birthtime);
-      } catch (writeErr) {
-        console.error('Error writing file:', writeErr);
-        // Try direct synchronous write as fallback
-        console.log('Attempting synchronous write as fallback...');
+      // If fileData is a Buffer, write it directly
+      if (Buffer.isBuffer(fileData)) {
         fs.writeFileSync(savePath, fileData);
-        console.log('Sync write completed');
+      } else if (typeof fileData === 'string') {
+        // If it's a string, convert to Buffer
+        fs.writeFileSync(savePath, Buffer.from(fileData));
+      } else {
+        // Otherwise try to stringify the object
+        fs.writeFileSync(savePath, Buffer.from(JSON.stringify(fileData, null, 2)));
       }
+
 
       // Show a success message
       sendMessage(
@@ -190,7 +170,7 @@ const RoomFiles = ({ onBack }) => {
         console.error('Could not open downloads folder:', openErr);
       }
     } catch (err) {
-      console.error('Error downloading file:', err);
+      console.error('Error in handleDownloadFile:', err);
 
       // Send an error message to the room
       if (activeRoomId) {
@@ -202,6 +182,8 @@ const RoomFiles = ({ onBack }) => {
       }
     }
   }, [activeRoomId, downloadFile, selectedFile, sendMessage]);
+
+
   const handlers = {
     navigateUp: () => {
       if (isDeleteConfirmMode || showUploadDialog) return;
@@ -373,11 +355,11 @@ const RoomFiles = ({ onBack }) => {
       )}
 
       {/* File upload dialog */}
-      <FileUpload
-        isActive={showUploadDialog}
-        onClose={() => setShowUploadDialog(false)}
-        onUpload={handleFileUpload}
-      />
+      {/* <FileUpload */}
+      {/*   isActive={showUploadDialog} */}
+      {/*   onClose={() => setShowUploadDialog(false)} */}
+      {/*   onUpload={handleFileUpload} */}
+      {/* /> */}
 
       {/* Navigation help footer */}
       <NavigationHelp width={terminalWidth} />

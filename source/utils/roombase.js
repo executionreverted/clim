@@ -583,6 +583,7 @@ class RoomBase extends ReadyResource {
   async uploadFile(data, filePath, options = {}) {
     if (!this.blobStore) {
       console.error('Failed to initialize blob store');
+      writeFileSync('./blobstore', "error")
       return null;
     }
 
@@ -659,26 +660,27 @@ class RoomBase extends ReadyResource {
       // Create hypercore for download
       remoteCore = new Hypercore(tempDir, coreKey, { wait: true });
       await remoteCore.ready();
+      const localSwarm = new Hyperswarm()
+      const topic = await localSwarm.join(coreKey)
 
-      // Join swarm to find peers
-      topic = this.swarm.join(remoteCore.discoveryKey, { client: true, server: false });
-      await topic.flushed(); // Wait until we've fully announced
-
-      // Set up connection handler
       const connectionHandler = (conn) => {
+        writeFileSync('./connhand', "connected")
         remoteCore.replicate(conn);
       };
 
-      this.swarm.on('connection', connectionHandler);
 
+      localSwarm.on('connection', connectionHandler);
+      // Set up connection handler
       // Wait for peers to connect
       await new Promise(resolve => setTimeout(resolve, 3000));
       await remoteCore.update({ wait: true });
 
+      writeFileSync('./file', "core ready")
       // Create hyperblobs to access the data
       const remoteBlobs = new Hyperblobs(remoteCore);
       await remoteBlobs.ready();
 
+      writeFileSync('./file', "ready")
       // Get the blob ID in the correct format
       const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
       console.log('Attempting to get blob with ID:', blobId);
@@ -690,8 +692,8 @@ class RoomBase extends ReadyResource {
       });
 
       writeFileSync('./filedata', JSON.stringify(fileData))
+      await localSwarm.destroy()
       // Clean up
-      this.swarm.removeListener('connection', connectionHandler);
       if (topic) await topic.destroy().catch(noop);
       if (remoteBlobs && remoteBlobs.close) await remoteBlobs.close().catch(noop);
       if (remoteCore) await remoteCore.close().catch(noop);
@@ -707,9 +709,8 @@ class RoomBase extends ReadyResource {
     } catch (err) {
       writeFileSync('./err', JSON.stringify(err.message))
       console.error('Error downloading file:', err);
-      // Clean up resources
       try {
-        this.swarm.removeAllListeners('connection');
+        await localSwarm?.removeAllListeners('connection');
         if (topic) await topic.destroy().catch(noop);
         if (remoteCore) await remoteCore.close().catch(noop);
         if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
