@@ -4,55 +4,41 @@ import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import path from 'path';
-import { writeFileSync } from 'fs';
 
+
+function shortenFileName(fileName, maxLength = 12) {
+  if (fileName.length <= maxLength) return fileName;
+
+  const extension = path.extname(fileName);
+  const baseName = path.basename(fileName, extension);
+
+  if (baseName.length + extension.length <= maxLength) {
+    return fileName;
+  }
+
+  const prefixLength = Math.floor((maxLength - 4) / 2);
+  const suffixLength = maxLength - prefixLength - 3;
+
+  return `${baseName.slice(0, prefixLength)}...${baseName.slice(-suffixLength)}${extension}`;
+}
 
 // Memoized file item component
 // Replace the FileItem component in source/components/RoomFiles/FileList.js
-const FileItem = memo(({ file, isSelected, isFocused, width, colors, isDownloaded }) => {
-  if (!file) return null;
-
-  // Extract file properties safely with fallbacks
+const FileItem = memo(({ file, isSelected, isFocused, width, colors, downloadStatus }) => {
   const name = file.name || path.basename(file.path || '') || 'Unknown';
-
-  // Calculate maximum name length based on available width
-  const maxNameLength = Math.min(10, Math.floor(width * 0.5)); // 50% of available width
-  const displayName = name.length > maxNameLength
-    ? name.substring(0, maxNameLength - 3) + '...'
-    : name;
-
-  // Set icon based on file type
-  let icon = '📄';
-  if (name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.png') || name.toLowerCase().endsWith('.gif')) {
-    icon = '🖼️';
-  } else if (name.toLowerCase().endsWith('.pdf')) {
-    icon = '📑';
-  } else if (name.toLowerCase().endsWith('.mp3') || name.toLowerCase().endsWith('.wav')) {
-    icon = '🎵';
-  } else if (name.toLowerCase().endsWith('.mp4') || name.toLowerCase().endsWith('.mov')) {
-    icon = '🎬';
-  } else if (name.toLowerCase().endsWith('.zip') || name.toLowerCase().endsWith('.tar')) {
-    icon = '📦';
-  }
+  const downloadIcon = downloadStatus?.downloaded ? '✓' : '↓';
+  const downloadColor = downloadStatus?.downloaded ? colors.successColor : colors.warningColor;
 
   return (
-    <Box width={width} overflow="hidden">
-      <Text width={width - 2} wrap="truncate" color={isSelected ? colors.secondaryColor : colors.textColor}>
-        {isSelected && isFocused ? '>' : ' '}
-        {icon}
-        {displayName}
-        {
-          isDownloaded ? 't' : 'f'
-        }
+    <Box gap={1} width={width} overflow="hidden">
+      <Text flexGrow={1} width={width - 4} wrap="truncate" color={isSelected ? colors.secondaryColor : colors.primaryColor}>
+        {isSelected && isFocused ? '> ' : ' '}
+        {shortenFileName(name)}
+      </Text>
+      <Text bold color={downloadColor}>
+        {downloadIcon}
       </Text>
     </Box>
-  );
-}, (prevProps, nextProps) => {
-  // Memoization logic to prevent unnecessary re-renders
-  return (
-    prevProps.isSelected === nextProps.isSelected &&
-    prevProps.file?.name === nextProps.file?.name &&
-    prevProps.file?.size === nextProps.file?.size
   );
 });
 
@@ -107,8 +93,6 @@ const FileList = ({
   );
 
 
-
-
   return (
     <Box
       width={width}
@@ -157,7 +141,7 @@ const FileList = ({
                   isSelected={actualIndex === safeSelectedIndex}
                   isFocused={isFocused}
                   width={width}
-                  isDownloaded={downloadedFiles[file.name]}
+                  downloadStatus={downloadedFiles[file.name]}
                   colors={{
                     primaryColor,
                     secondaryColor,
@@ -168,7 +152,6 @@ const FileList = ({
               );
             })}
           </Box>
-
           {/* Down indicator */}
           {showDownIndicator && (
             <Box>

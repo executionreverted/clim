@@ -105,21 +105,6 @@ const RoomFiles = ({ onBack }) => {
     setIsDeleteConfirmMode(false);
   }, [activeRoomId, deleteFile, loadRoomFiles, selectedFile, sendMessage]);
 
-  // Handle file uploading
-  const handleFileUpload = useCallback(async (file) => {
-    if (!file || !activeRoomId) return false;
-
-    try {
-      const result = await uploadFile(activeRoomId, file);
-      setShowUploadDialog(false);
-      return result;
-    } catch (err) {
-      console.error('Error uploading file:', err);
-      return false;
-    }
-  }, [activeRoomId, uploadFile]);
-
-  // Handle direct file download
   // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
 
@@ -281,27 +266,43 @@ const RoomFiles = ({ onBack }) => {
 
   // Use the keymap hook
   useKeymap('fileExplorer', handlers);
+  const checkDownloadStatus = async () => {
+    const downloadsPath = download();
+    const statusMap = {};
+    const detailedStatusMap = {};
 
-  useEffect(() => {
+    for (const file of roomFiles) {
+      const fileName = file.name || path.basename(file.path || '');
+      const downloadPath = path.join(downloadsPath, fileName);
 
-    const checkDownloadStatus = async () => {
-      const downloadsPath = download();
-      const statusMap = {};
+      // Check file existence
+      const fileExists = fs.existsSync(downloadPath);
 
-      for (const file of roomFiles) {
-        const fileName = file.name || path.basename(file.path || '');
-        const downloadPath = path.join(downloadsPath, fileName);
-        fs.writeFileSync('./checkexits', JSON.stringify(downloadPath))
-        statusMap[fileName] = fs.existsSync(downloadPath);
+      // Get additional file information if downloaded
+      if (fileExists) {
+        try {
+          const stats = fs.statSync(downloadPath);
+          detailedStatusMap[fileName] = {
+            downloaded: true,
+            size: stats.size,
+            lastModified: stats.mtime
+          };
+        } catch {
+          detailedStatusMap[fileName] = { downloaded: true };
+        }
+      } else {
+        detailedStatusMap[fileName] = { downloaded: false };
       }
 
-      setDownloadedFiles(() => Object.assign({}, statusMap));
+      statusMap[fileName] = fileExists;
+    }
 
-      fs.writeFileSync('./downloaded', JSON.stringify(statusMap))
-    };
+    setDownloadedFiles(detailedStatusMap);
+  };
 
+  useEffect(() => {
     checkDownloadStatus();
-  }, [files, roomFiles.length]);
+  }, [files, roomFiles]);
 
   return (
     <Box
