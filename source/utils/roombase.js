@@ -689,31 +689,45 @@ class RoomBase extends ReadyResource {
    */
   // Enhanced getFiles method
   async getFiles(directory = '/', options = {}) {
-    const { recursive = false } = options;
-
     try {
-      const messages = await this.base.view.find('@roombase/messages', {
-        hasAttachments: true
-      }, {});
+      // Use promise-based stream processing
+      const files = await new Promise((resolve, reject) => {
+        const fileList = [];
 
-      const files = [];
+        const messageStream = this.base.view.find('@roombase/messages', {
+          hasAttachments: true
+        }, {});
 
-      for (const msg of messages) {
-        if (msg.attachments) {
-          const attachmentsParsed = JSON.parse(msg.attachments)
-          for (const attachment of attachmentsParsed) {
-            files.push({
-              ...attachment,
-              sender: msg.sender,
-              timestamp: attachment.timestamp || msg.timestamp
-            });
+        messageStream.on('data', (msg) => {
+          try {
+            if (msg.attachments) {
+              const attachmentsParsed = JSON.parse(msg.attachments);
+              for (const attachment of attachmentsParsed) {
+                fileList.push({
+                  ...attachment,
+                  sender: msg.sender,
+                  timestamp: attachment.timestamp || msg.timestamp
+                });
+              }
+            }
+          } catch (parseErr) {
+            console.error('Error parsing attachments:', parseErr);
           }
-        }
-      }
+        });
 
-      return files.sort((a, b) => b.timestamp - a.timestamp);
+        messageStream.on('end', () => {
+          resolve(fileList.sort((a, b) => b.timestamp - a.timestamp));
+        });
+
+        messageStream.on('error', (err) => {
+          console.error('Stream error:', err);
+          resolve([]);
+        });
+      });
+
+      return files;
     } catch (err) {
-      console.error(`Error listing files:`, err);
+      console.error(`Error loading files:`, err);
       return [];
     }
   }

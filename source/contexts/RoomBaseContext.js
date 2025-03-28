@@ -526,6 +526,7 @@ export function RoomBaseProvider({ children }) {
         return files;
       } catch (err) {
         console.error(`Error loading files for room ${roomId}:`, err);
+        writeFileSync('./loadroomfiles', JSON.stringify(err.message))
         return [];
       } finally {
         dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });

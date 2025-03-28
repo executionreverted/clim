@@ -4,6 +4,7 @@ import { getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
 import clipboardy from 'clipboardy';
 import path from 'path';
+import { writeFileSync } from 'fs';
 
 // Define action types
 const ACTIONS = {
@@ -186,6 +187,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
       return true;
     } catch (err) {
       console.error(`Error loading files for room ${roomId}:`, err);
+      writeFileSync('./loadfiles', JSON.stringify(err.message))
       if (activeRoomId) {
         sendMessage(
           activeRoomId,
