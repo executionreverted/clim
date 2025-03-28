@@ -465,21 +465,18 @@ export function RoomBaseProvider({ children }) {
   // Updated to use Hyperblobs for file downloads
   const downloadFile = useCallback(async (roomId, filePathOrRef, saveAs = null) => {
     const room = roomInstances.current.get(roomId);
-    if (!room) return null;
+    if (!room) {
+      writeFileSync('./downloadeddata', "no room")
+      return null
+    };
 
     try {
       // Download the file using roombase's downloadFile
       const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH);
-
-      // If in Node.js environment and saveAs is provided, save to disk
-      if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-        if (saveAs && data) {
-          await fs.promises.writeFile(saveAs, data);
-        }
-      }
-
+      writeFileSync('./downloadeddata', JSON.stringify(data))
       return data;
     } catch (err) {
+      writeFileSync('./downloaderr', JSON.stringify(err.message))
       console.error(`Error downloading file from room ${roomId}:`, err);
       return null;
     }

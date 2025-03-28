@@ -418,14 +418,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     createRoom,
     joinRoom,
     leaveRoom,
-    setInputValue,
     createInviteCode,
     updateProfile,
-    setShowFileExplorer,
-    setShowRoomFiles,
-    setLoading,
-    setInputMode,
-    safeLoadRoomFiles,
     currentDirectory
   ]);
 

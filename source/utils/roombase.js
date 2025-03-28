@@ -11,10 +11,10 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js';
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 import { getEncoding } from './spec/hyperdispatch/messages.js';
-import { writeFileSync } from 'fs';
+import fs, { writeFileSync } from 'fs';
 import path from 'path';
+
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
-import download from 'downloads-folder';
 import Hypercore from 'hypercore';
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
@@ -630,7 +630,7 @@ class RoomBase extends ReadyResource {
 
       // Farklı bir temp klasörü kullan
       const tempConfigPath = path.join(configPath, `/tmp/hypercore_${Date.now()}`);
-      const ownerBlobCore = new Hypercore(tempConfigPath, blobRef.coreKey, { createIfMissing: false });
+      const ownerBlobCore = new Hypercore(tempConfigPath, blobRef.coreKey);
 
       await ownerBlobCore.ready(); // Ensure it's ready
 
@@ -651,9 +651,7 @@ class RoomBase extends ReadyResource {
       return data;
     } catch (err) {
       const errorMessage = `Error downloading file: ${err.message}\n${err.stack}`;
-      fs.writeFileSync('./downloaderror.log', errorMessage);
-      require('fs').writeFileSync('./downloaderror', JSON.stringify(err.message));
-      console.error(`Error downloading file:`, err);
+      fs.writeFileSync('./downloaderror', errorMessage);
       return null;
     }
   }

@@ -30,8 +30,8 @@ const DEFAULT_KEYMAP = {
     toggleSelection: { key: 'space', description: 'Toggle selection (in multi-select mode)' },
     space: { key: 'space', description: 'Toggle selection (in multi-select mode)' },
     refresh: { key: 'r', description: 'Refresh file list' },
-    delete: { key: 'd', description: 'Delete file' },
-    download: { key: 'D', shift: true, description: 'Download file' },
+    delete: { key: 'x', description: 'Delete file' },
+    download: { key: 'd', shift: true, description: 'Download file' },
     uploadFile: { key: 'u', description: 'Upload file' }
   },
   chat: {
@@ -84,7 +84,9 @@ const DEFAULT_KEYMAP = {
     delete: { key: 'x', description: 'Delete file' },
     refresh: { key: 'r', description: 'Refresh files' }
   }
-};// Config file path
+};
+
+// Config file path
 const CONFIG_FILENAME = '.config/.hyperchatters/keymap.json';
 const CONFIG_PATH = path.join(os.homedir(), CONFIG_FILENAME);
 

@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Box, Text, useStdout } from 'ink';
 import path from 'path';
-import fs from 'fs';
+import fs, { writeFileSync } from 'fs';
 import download from 'downloads-folder';
 import { useChat } from "../../contexts/RoomBaseChatContext.js";
 import useKeymap from "../../hooks/useKeymap.js";
@@ -120,7 +120,9 @@ const RoomFiles = ({ onBack }) => {
 
   // Handle direct file download
   const handleDownloadFile = useCallback(async () => {
-    if (selectedFile && !selectedFile.isDirectory) {
+
+    writeFileSync('./run', "handleDownloadFile")
+    if (selectedFile) {
       try {
         // Get the downloads folder path
         const downloadsPath = download();
@@ -129,24 +131,23 @@ const RoomFiles = ({ onBack }) => {
         const savePath = path.join(downloadsPath, selectedFile.name);
 
         // Download the file
-        const fileData = await downloadFile(selectedFile, TEMP);
+        const fileData = await downloadFile(activeRoomId, selectedFile);
 
+        writeFileSync('./data', JSON.stringify(downloadFile))
         if (fileData) {
           // Write the file to the downloads folder
           await fs.promises.writeFile(savePath, fileData);
-
+          writeFileSync('./downloaded', JSON.stringify(fileData))
           // Show a success message
           sendMessage(
             activeRoomId,
             `📥 Downloaded file: ${selectedFile.name} to Downloads folder`,
             true
-          );
-        } else {
-          throw new Error('Failed to download file');
+          )
         }
       } catch (err) {
         console.error('Error downloading file:', err);
-
+        writeFileSync('./downloaderr', JSON.stringify(err.message))
         // Send an error message to the room
         if (activeRoomId) {
           sendMessage(
