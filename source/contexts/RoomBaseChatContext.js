@@ -202,7 +202,7 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
     } finally {
       setLoading(false);
     }
-  }, [activeRoomId, loadRoomFiles, sendMessage, setLoading]);
+  }, [activeRoomId]);
 
   // Handle input submission
   const handleInputSubmit = useCallback((localInputVal) => {
@@ -374,6 +374,16 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
       setInputValue('');
       return true;
+    }
+    if (localInputVal.trim().startsWith('/')) {
+      sendMessage(
+        activeRoomId,
+        `Invalid command: ${localInputVal}`,
+        true
+      );
+      setInputValue("")
+      setInputMode(false);
+      return
     }
 
     if (focusedPanel === 'rooms' && inputMode) {
