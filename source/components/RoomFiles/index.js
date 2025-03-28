@@ -1,5 +1,5 @@
-// Simplified RoomFiles Component for flat file listing
-import React, { useEffect, useState } from "react";
+// Updated RoomFiles/index.js - Refactored for Hyperblobs
+import React, { useEffect, useState, useCallback } from "react";
 import { Box, Text, useStdout } from 'ink';
 import { useChat } from "../../contexts/RoomBaseChatContext.js";
 import useKeymap from "../../hooks/useKeymap.js";
@@ -7,6 +7,7 @@ import useThemeUpdate from "../../hooks/useThemeUpdate.js";
 import FileList from "./FileList.js";
 import FilePreview from "./FilePreview.js";
 import NavigationHelp from "./NavigationHelp.js";
+import FileUpload from "./FileUpload.js";
 
 const RoomFiles = ({ onBack }) => {
   const {
@@ -26,10 +27,11 @@ const RoomFiles = ({ onBack }) => {
   const [visibleStartIndex, setVisibleStartIndex] = useState(0);
   const [previewScrollOffset, setPreviewScrollOffset] = useState(0);
   const [isDeleteConfirmMode, setIsDeleteConfirmMode] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   const currentTheme = useThemeUpdate();
 
-  // Get files for the active room - always flat
+  // Get files for the active room
   const roomFiles = activeRoomId && files[activeRoomId] ? files[activeRoomId] : [];
 
   // Update terminal dimensions if they change
@@ -45,7 +47,7 @@ const RoomFiles = ({ onBack }) => {
     };
   }, [stdout]);
 
-  // Load files on component mount - just once
+  // Load files on component mount
   useEffect(() => {
     if (activeRoomId) {
       loadRoomFiles(activeRoomId, '/');
@@ -55,6 +57,9 @@ const RoomFiles = ({ onBack }) => {
   // Reset selection when files change
   useEffect(() => {
     if (roomFiles.length > 0) {
+      setSelectedIndex(Math.min(selectedIndex, roomFiles.length - 1));
+      setVisibleStartIndex(Math.min(visibleStartIndex, Math.max(0, roomFiles.length - 1)));
+    } else {
       setSelectedIndex(0);
       setVisibleStartIndex(0);
     }
@@ -72,7 +77,7 @@ const RoomFiles = ({ onBack }) => {
     : null;
 
   // Handle file deletion
-  const handleDeleteFile = () => {
+  const handleDeleteFile = useCallback(() => {
     if (selectedFile) {
       deleteFile(activeRoomId, selectedFile.path)
         .then(() => {
@@ -85,10 +90,24 @@ const RoomFiles = ({ onBack }) => {
         });
     }
     setIsDeleteConfirmMode(false);
-  };
+  }, [activeRoomId, deleteFile, loadRoomFiles, selectedFile]);
 
-  // Handle file downloading
-  const handleDownloadFile = async () => {
+  // Handle file uploading
+  const handleFileUpload = useCallback(async (file) => {
+    if (!file || !activeRoomId) return false;
+
+    try {
+      const result = await uploadFile(activeRoomId, file);
+      setShowUploadDialog(false);
+      return result;
+    } catch (err) {
+      console.error('Error uploading file:', err);
+      return false;
+    }
+  }, [activeRoomId, uploadFile]);
+
+  // Handle direct file download
+  const handleDownloadFile = useCallback(async () => {
     if (selectedFile && !selectedFile.isDirectory) {
       try {
         await downloadFile(activeRoomId, selectedFile.path, selectedFile.name);
@@ -96,12 +115,12 @@ const RoomFiles = ({ onBack }) => {
         console.error('Error downloading file:', err);
       }
     }
-  };
+  }, [activeRoomId, downloadFile, selectedFile]);
 
   // Define keymap handlers
   const handlers = {
     navigateUp: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       const newIndex = Math.max(0, selectedIndex - 1);
       setSelectedIndex(newIndex);
 
@@ -111,7 +130,7 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     navigateDown: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       const newIndex = Math.min(roomFiles.length - 1, selectedIndex + 1);
       setSelectedIndex(newIndex);
 
@@ -121,13 +140,13 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     pageUp: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       const newIndex = Math.max(0, selectedIndex - maxVisibleFiles);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, newIndex - Math.floor(maxVisibleFiles / 2)));
     },
     pageDown: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       const newIndex = Math.min(roomFiles.length - 1, selectedIndex + maxVisibleFiles);
       setSelectedIndex(newIndex);
       setVisibleStartIndex(Math.max(0, Math.min(
@@ -142,21 +161,21 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     delete: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       if (selectedFile) {
         setIsDeleteConfirmMode(true);
       }
     },
     download: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       handleDownloadFile();
     },
     previewScrollUp: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       setPreviewScrollOffset(Math.max(0, previewScrollOffset - 1));
     },
     previewScrollDown: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       setPreviewScrollOffset(prev => prev + 1);
     },
     back: () => {
@@ -164,12 +183,30 @@ const RoomFiles = ({ onBack }) => {
         setIsDeleteConfirmMode(false);
         return;
       }
+      if (showUploadDialog) {
+        setShowUploadDialog(false);
+        return;
+      }
       onBack();
     },
-    exit: onBack,
+    exit: () => {
+      if (isDeleteConfirmMode) {
+        setIsDeleteConfirmMode(false);
+        return;
+      }
+      if (showUploadDialog) {
+        setShowUploadDialog(false);
+        return;
+      }
+      onBack();
+    },
     refresh: () => {
-      if (isDeleteConfirmMode) return;
+      if (isDeleteConfirmMode || showUploadDialog) return;
       loadRoomFiles(activeRoomId, '/');
+    },
+    uploadFile: () => {
+      if (isDeleteConfirmMode || showUploadDialog) return;
+      setShowUploadDialog(true);
     }
   };
 
@@ -208,7 +245,6 @@ const RoomFiles = ({ onBack }) => {
           maxVisibleFiles={maxVisibleFiles}
           width={listWidth}
           height={contentHeight}
-          currentPath="/"
           isFocused={true}
         />
 
@@ -251,6 +287,13 @@ const RoomFiles = ({ onBack }) => {
           </Box>
         </Box>
       )}
+
+      {/* File upload dialog */}
+      <FileUpload
+        isActive={showUploadDialog}
+        onClose={() => setShowUploadDialog(false)}
+        onUpload={handleFileUpload}
+      />
 
       {/* Navigation help footer */}
       <NavigationHelp width={terminalWidth} />

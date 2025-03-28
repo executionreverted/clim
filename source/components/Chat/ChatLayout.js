@@ -1,4 +1,5 @@
-// components/Chat/ChatLayout.js - Updated to show loading indicator
+// Updates to ChatLayout.js for Hyperblobs integration
+
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { useChat } from '../../contexts/RoomBaseChatContext.js';
@@ -21,6 +22,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
     handleInputSubmit,
     onBack,
     setShowFileExplorer,
+    setShowRoomFiles,
     activeRoomId,
     isLoading,
     loadingMessage
@@ -81,6 +83,12 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
       setInputValue('');
       setShowFileExplorer(true);
     },
+    viewFiles: () => {
+      if (inputMode) return;
+      // Show room files
+      setInputValue('');
+      setShowRoomFiles(true);
+    },
     exit: () => onBack && onBack()
   };
 
@@ -103,6 +111,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
   const backKey = getBindingDescription(contextBindings.back);
   const shareFileKey = getBindingDescription(contextBindings.shareFile);
   const addRoomKey = getBindingDescription(contextBindings.addRoom);
+  const viewFilesKey = getBindingDescription(contextBindings.viewFiles);
 
   // Show loading overlay if loading state is true
   if (isLoading) {
@@ -115,7 +124,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
         justifyContent="center"
       >
         <Box marginBottom={1}>
-          <Loading text={loadingMessage} width={width} />
+          <Loading text={loadingMessage || "Loading..."} width={width} />
         </Box>
       </Box>
     );
@@ -162,7 +171,7 @@ const ChatLayout = memo(({ width = 100, height = 24 }) => {
         <Text dimColor>
           [{switchPanelKey}] Switch panels | [{focusInputKey}] Focus input | [{backKey}] Back/Exit |
           {focusedPanel === 'rooms' && ` [${addRoomKey}] Add room | `}
-          [{shareFileKey}] or /send: Share file | /join code | /invite | /profile name
+          [{shareFileKey}] or /send: Share file | [{viewFilesKey}] or /files: View files | /join code | /invite | /profile name
         </Text>
       </Box>
     </Box>

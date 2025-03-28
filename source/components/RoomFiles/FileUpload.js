@@ -1,16 +1,15 @@
-// source/components/RoomFiles/FileUpload.js
+// Updated FileUpload.js - Simplified for Hyperblobs
 import React, { useState } from 'react';
 import { Box, Text } from 'ink';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
-import TextInput from '../../components/TextInput.js';
-import path from 'path';
+import TextInput from '../TextInput.js';
 import fs from 'fs';
+import path from 'path';
 
 const FileUpload = ({
   isActive = false,
   onClose,
-  onUpload,
-  currentPath = '/files'
+  onUpload
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState(null);
@@ -50,9 +49,15 @@ const FileUpload = ({
       const stats = fs.statSync(value);
 
       if (stats.isDirectory()) {
-        setError("Cannot upload directories, only files");
+        setError("Cannot upload directories with Hyperblobs, only files");
         setIsUploading(false);
         return;
+      }
+
+      // Show warning for large files
+      if (stats.size > 100 * 1024 * 1024) { // 100MB
+        setError("Warning: File is very large. Upload may take a while.");
+        // Continue anyway after showing warning
       }
 
       // Create file object with path
@@ -88,7 +93,7 @@ const FileUpload = ({
       padding={1}
       flexDirection="column"
     >
-      <Text bold>Upload File to {currentPath}</Text>
+      <Text bold>Upload File</Text>
 
       <Box marginTop={1}>
         <Text>Enter local file path: </Text>

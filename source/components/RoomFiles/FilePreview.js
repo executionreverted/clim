@@ -1,4 +1,4 @@
-// source/components/RoomFiles/FilePreview.js
+// Updated FilePreview.js - Optimized for Hyperblobs with better content handling
 import React, { useState, useEffect, memo } from 'react';
 import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
@@ -6,26 +6,52 @@ import path from 'path';
 import mime from 'mime-types';
 import { sanitizeTextForTerminal } from '../FileExplorer/utils.js';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import { safelyReadFile, safeString } from '../../utils/memory-management.js';
 
 // Constants for file preview limits
 const MAX_PREVIEW_SIZE = 100 * 1024; // 100KB max preview
 const MAX_PREVIEW_LINES = 100;
 
-// Preview text content based on file type
+// Memoized component for text preview
 const TextPreview = memo(({ content, scrollOffset, maxLines, width, colors }) => {
   if (!content) return null;
 
-  // Calculate line count safely without loading all lines into memory
-  const lineCount = content.split('\n').length;
+  // Safe way to count lines without loading too much in memory
+  let lineCount = 0;
+  let i = 0;
+  while (i < content.length) {
+    if (content[i] === '\n') lineCount++;
+    i++;
+  }
+  lineCount++; // Account for last line without newline
 
   // Apply scrolling with boundary checks
   const startLine = Math.min(scrollOffset, Math.max(0, lineCount - maxLines));
 
-  // Only process the lines we're actually going to display
-  // This reduces memory usage significantly
-  const visibleLines = content
-    .split('\n')
-    .slice(startLine, startLine + maxLines);
+  // Create an array to hold the visible lines
+  let visibleLines = [];
+
+  // More memory-efficient approach to extract only the lines we need
+  let currentLine = 0;
+  let lineStart = 0;
+  i = 0;
+
+  while (i < content.length && visibleLines.length < maxLines) {
+    if (content[i] === '\n' || i === content.length - 1) {
+      // We found the end of a line
+      if (currentLine >= startLine) {
+        // Only process lines we'll actually display
+        const line = content.substring(lineStart, i === content.length - 1 ? i + 1 : i);
+        visibleLines.push(line);
+      }
+      currentLine++;
+      lineStart = i + 1;
+
+      // Exit early if we've gone past what we need
+      if (currentLine > startLine + maxLines) break;
+    }
+    i++;
+  }
 
   return (
     <Box flexDirection="column">
@@ -57,13 +83,13 @@ const TextPreview = memo(({ content, scrollOffset, maxLines, width, colors }) =>
   );
 });
 
-// Image preview placeholder
+// Memoized component for image preview
 const ImagePreview = memo(({ file, colors }) => {
   return (
     <Box flexDirection="column" padding={1}>
       <Text color={colors.secondaryColor} bold>Image Preview</Text>
       <Box marginY={1}>
-        <Text>🖼️  Image file: {path.basename(file.path)}</Text>
+        <Text>🖼️  Image file: {file.name || path.basename(file.path || '')}</Text>
       </Box>
       <Text italic color={colors.mutedTextColor}>
         (Image preview not available in terminal)
@@ -72,13 +98,13 @@ const ImagePreview = memo(({ file, colors }) => {
   );
 });
 
-// Audio file preview
+// Memoized component for audio preview
 const AudioPreview = memo(({ file, colors }) => {
   return (
     <Box flexDirection="column" padding={1}>
       <Text color={colors.secondaryColor} bold>Audio File</Text>
       <Box marginY={1}>
-        <Text>🎵  Audio: {path.basename(file.path)}</Text>
+        <Text>🎵  Audio: {file.name || path.basename(file.path || '')}</Text>
       </Box>
       <Text italic color={colors.mutedTextColor}>
         (Audio preview not available in terminal)
@@ -87,13 +113,13 @@ const AudioPreview = memo(({ file, colors }) => {
   );
 });
 
-// Video file preview
+// Memoized component for video preview
 const VideoPreview = memo(({ file, colors }) => {
   return (
     <Box flexDirection="column" padding={1}>
       <Text color={colors.secondaryColor} bold>Video File</Text>
       <Box marginY={1}>
-        <Text>🎬  Video: {path.basename(file.path)}</Text>
+        <Text>🎬  Video: {file.name || path.basename(file.path || '')}</Text>
       </Box>
       <Text italic color={colors.mutedTextColor}>
         (Video preview not available in terminal)
@@ -102,26 +128,14 @@ const VideoPreview = memo(({ file, colors }) => {
   );
 });
 
-// Directory preview
-const DirectoryPreview = memo(({ file, colors }) => {
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text color={colors.secondaryColor} bold>Directory</Text>
-      <Box marginY={1}>
-        <Text>📁  {path.basename(file.path) || 'Root directory'}</Text>
-      </Box>
-      <Text color={colors.primaryColor}>Press Enter to navigate into this folder</Text>
-    </Box>
-  );
-});
-
-// File metadata display
+// Memoized component for file metadata display
 const FileMetadata = memo(({ file, colors }) => {
-  const fileName = file.name || path.basename(file.path);
+  const fileName = file.name || path.basename(file.path || '');
   const extension = path.extname(fileName).toLowerCase();
   const mimeType = mime.lookup(fileName) || 'Unknown type';
   const fileSize = file.size ? filesize(file.size) : 'Unknown size';
-  const created = file.createdAt ? new Date(file.createdAt).toLocaleString() : 'Unknown';
+  const created = file.timestamp ? new Date(file.timestamp).toLocaleString() : 'Unknown';
+  const sender = file.sender || 'Unknown';
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -142,12 +156,22 @@ const FileMetadata = memo(({ file, colors }) => {
       )}
 
       <Box>
+        <Text>Shared by: <Text color={colors.secondaryColor}>{sender}</Text></Text>
+      </Box>
+
+      <Box>
         <Text>Created: <Text color={colors.secondaryColor}>{created}</Text></Text>
       </Box>
 
       <Box marginTop={1}>
-        <Text>Path: <Text color={colors.mutedTextColor}>{file.path}</Text></Text>
+        <Text>Path: <Text color={colors.mutedTextColor}>{file.path || 'Unknown'}</Text></Text>
       </Box>
+
+      {file.blobId && (
+        <Box>
+          <Text>Blob ID: <Text color={colors.mutedTextColor}>{typeof file.blobId === 'object' ? 'Complex blob reference' : file.blobId}</Text></Text>
+        </Box>
+      )}
     </Box>
   );
 });
@@ -176,13 +200,16 @@ const FilePreview = ({
   const [previewContent, setPreviewContent] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [memoryWarning, setMemoryWarning] = useState(false);
 
   // Determine file type for preview
   const getFileType = () => {
     if (!file) return 'none';
+
+    // Hyperblobs doesn't support directories
     if (file.isDirectory) return 'directory';
 
-    const fileName = file.name || path.basename(file.path);
+    const fileName = file.name || path.basename(file.path || '');
     const extension = path.extname(fileName).toLowerCase();
     const mimeType = mime.lookup(fileName) || '';
 
@@ -209,21 +236,22 @@ const FilePreview = ({
 
   // Load preview content for text files
   useEffect(() => {
+    // Clean up previous content to free memory
+    setPreviewContent(null);
+
     const fileType = getFileType();
-    let abortController = new AbortController();
 
     // Only load preview content for text files
     if (fileType === 'text' && file && activeRoomId) {
       setIsLoading(true);
       setError(null);
+      setMemoryWarning(false);
 
-      // Define a maximum chunk size to load at once
-      const CHUNK_SIZE = 50 * 1024; // 50KB chunks
-
-      // Fetch the file content with chunking
+      // Use safer memory-managed file reading
       const loadTextContent = async () => {
         try {
-          const data = await downloadFile(activeRoomId, file.path);
+          // Load file content safely using the downloadFile function
+          const data = await downloadFile(activeRoomId, file.path || file);
 
           if (!data) {
             setError('Could not load file content');
@@ -235,28 +263,31 @@ const FilePreview = ({
           let content;
           if (Buffer.isBuffer(data)) {
             // Only load the first MAX_PREVIEW_SIZE bytes to prevent memory issues
-            content = data.slice(0, MAX_PREVIEW_SIZE).toString('utf-8');
+            const previewSize = Math.min(data.length, MAX_PREVIEW_SIZE);
+            content = data.slice(0, previewSize).toString('utf-8');
+
+            if (data.length > MAX_PREVIEW_SIZE) {
+              content += '\n\n[File truncated - too large to display completely]';
+              setMemoryWarning(true);
+            }
           } else if (typeof data === 'string') {
             content = data.substring(0, MAX_PREVIEW_SIZE);
+
+            if (data.length > MAX_PREVIEW_SIZE) {
+              content += '\n\n[File truncated - too large to display completely]';
+              setMemoryWarning(true);
+            }
           } else {
             throw new Error('Unexpected data format');
           }
 
-          // Add truncation notice if needed
-          if (data.length > MAX_PREVIEW_SIZE) {
-            content += '\n\n[File truncated - too large to display completely]';
-          }
-
-          if (!abortController.signal.aborted) {
-            setPreviewContent(content);
-            setError(null);
-            setIsLoading(false);
-          }
+          // Set the preview content
+          setPreviewContent(safeString.truncate(content, MAX_PREVIEW_SIZE));
+          setError(null);
+          setIsLoading(false);
         } catch (err) {
-          if (!abortController.signal.aborted) {
-            setError(`Error loading preview: ${err.message}`);
-            setIsLoading(false);
-          }
+          setError(`Error loading preview: ${err.message}`);
+          setIsLoading(false);
         }
       };
 
@@ -266,14 +297,9 @@ const FilePreview = ({
       setPreviewContent(null);
       setError(null);
     }
+  }, [file, activeRoomId, downloadFile]);
 
-    return () => {
-      // Clean up and abort any pending requests when component unmounts or file changes
-      abortController.abort();
-      // Clear large content from memory
-      setPreviewContent(null);
-    };
-  }, [file, activeRoomId, downloadFile]);  // Calculate available preview height (accounting for metadata)
+  // Calculate available preview height (accounting for metadata)
   const contentHeight = height - 8; // Reserve space for borders, title, metadata
 
   // Render file preview based on file type
@@ -282,7 +308,7 @@ const FilePreview = ({
       return (
         <Box flexDirection="column" padding={1}>
           <Text color={mutedTextColor} italic>
-            Select a file or folder to view details
+            Select a file to view details
           </Text>
         </Box>
       );
@@ -307,14 +333,6 @@ const FilePreview = ({
     const fileType = getFileType();
 
     switch (fileType) {
-      case 'directory':
-        return (
-          <DirectoryPreview
-            file={file}
-            colors={currentTheme.colors}
-          />
-        );
-
       case 'image':
         return (
           <ImagePreview
@@ -340,14 +358,31 @@ const FilePreview = ({
         );
 
       case 'text':
+        if (!previewContent) {
+          return (
+            <Box flexDirection="column" padding={1}>
+              <Text color={warningColor}>Loading text preview...</Text>
+            </Box>
+          );
+        }
+
         return (
-          <TextPreview
-            content={previewContent}
-            scrollOffset={scrollOffset}
-            maxLines={Math.max(3, contentHeight - 5)}
-            width={width}
-            colors={currentTheme.colors}
-          />
+          <>
+            <TextPreview
+              content={previewContent}
+              scrollOffset={scrollOffset}
+              maxLines={Math.max(3, contentHeight - 5)}
+              width={width}
+              colors={currentTheme.colors}
+            />
+            {memoryWarning && (
+              <Box marginTop={1}>
+                <Text color={warningColor} italic>
+                  File is large. Only showing first part.
+                </Text>
+              </Box>
+            )}
+          </>
         );
 
       case 'binary':
@@ -357,7 +392,7 @@ const FilePreview = ({
             <Text color={secondaryColor} bold>Binary File</Text>
             <Box marginY={1}>
               <Text>
-                File: {file.name || path.basename(file.path)}
+                File: {file.name || path.basename(file.path || '')}
               </Text>
             </Box>
             <Text italic color={mutedTextColor}>
@@ -384,7 +419,7 @@ const FilePreview = ({
       {file && (
         <Box marginBottom={1}>
           <Text bold wrap="truncate">
-            {file.name || path.basename(file.path) || 'Unknown'}
+            {file.name || path.basename(file.path || '') || 'Unknown'}
           </Text>
         </Box>
       )}
@@ -409,4 +444,5 @@ const FilePreview = ({
   );
 };
 
-export default FilePreview;
+
+export default FilePreview

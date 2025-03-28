@@ -1,36 +1,40 @@
-// Improved FileList component with safer path handling
+// Updated FileList.js - Simplified for Hyperblobs flat file structure
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
+import path from 'path';
 
-// Helper function to safely get basename without using path module
-const getBasename = (filepath) => {
+// Safely get filename without using path module
+const getFilename = (filepath) => {
   if (!filepath) return 'Unknown';
-  const parts = filepath.split('/');
-  return parts[parts.length - 1] || parts[parts.length - 2] || 'Unknown';
+
+  // If it's already just a filename, return it directly
+  if (!filepath.includes('/')) return filepath;
+
+  // Otherwise extract the basename
+  return path.basename(filepath);
 };
 
-// Memoized file item with safer path handling
+// Memoized file item component
 const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   if (!file) return null;
 
   // Extract file properties safely with fallbacks
-  const name = file.name || getBasename(file.path || '') || 'Unknown';
+  const name = file.name || getFilename(file.path || '') || 'Unknown';
   const size = file.size ? filesize(file.size) : 'Unknown size';
-  const isDirectory = !!file.isDirectory;
+  const sender = file.sender || 'Unknown';
+  const timestamp = file.timestamp ? new Date(file.timestamp).toLocaleString() : 'Unknown date';
 
-  // Determine icon and color based on file type
-  const icon = isDirectory ? '📁' : '📄';
+  // Set icon and styling
+  const icon = '📄';
   const textColor = isSelected ? colors.secondaryColor : colors.textColor;
 
   return (
     <Box>
       <Text wrap="truncate" color={textColor}>
         {isSelected && isFocused ? '>' : ' '} {icon} {name}
-        {!isDirectory && (
-          <Text color={colors.mutedTextColor}> ({size})</Text>
-        )}
+        <Text color={colors.mutedTextColor}> ({size})</Text>
       </Text>
     </Box>
   );
@@ -43,7 +47,7 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   );
 });
 
-// Improved FileList with better error handling
+// Main file list component
 const FileList = ({
   files = [],
   selectedIndex = 0,
@@ -51,7 +55,6 @@ const FileList = ({
   maxVisibleFiles = 10,
   width = 40,
   height = 20,
-  currentPath = '/',
   isFocused = false
 }) => {
   const currentTheme = useThemeUpdate();
@@ -91,9 +94,6 @@ const FileList = ({
     safeVisibleStartIndex + maxVisibleFiles
   );
 
-  // Format the current path for display
-  const displayPath = getBasename(currentPath) || 'Files';
-
   return (
     <Box
       width={width}
@@ -105,22 +105,27 @@ const FileList = ({
     >
       <Box marginBottom={1}>
         <Text bold wrap="truncate">
-          {displayPath} ({validFiles.length} {validFiles.length === 1 ? 'item' : 'items'})
+          Files ({validFiles.length} {validFiles.length === 1 ? 'file' : 'files'})
         </Text>
       </Box>
 
       {validFiles.length === 0 ? (
         <Box>
           <Text color={mutedTextColor} italic>
-            {currentPath === '/' ? 'Root directory is empty' : 'This folder is empty'}
+            No files shared in this room
           </Text>
+          <Box marginTop={1}>
+            <Text color={mutedTextColor}>
+              Press 'u' to upload a file
+            </Text>
+          </Box>
         </Box>
       ) : (
         <>
           {/* Up indicator */}
           {showUpIndicator && (
             <Box>
-              <Text color={secondaryColor}>↑ {safeVisibleStartIndex} more item(s)</Text>
+              <Text color={secondaryColor}>↑ {safeVisibleStartIndex} more file(s)</Text>
             </Box>
           )}
 
@@ -152,17 +157,17 @@ const FileList = ({
           {showDownIndicator && (
             <Box>
               <Text color={secondaryColor}>
-                ↓ {validFiles.length - (safeVisibleStartIndex + maxVisibleFiles)} more item(s)
+                ↓ {validFiles.length - (safeVisibleStartIndex + maxVisibleFiles)} more file(s)
               </Text>
             </Box>
           )}
         </>
       )}
 
-      {/* Show path info */}
+      {/* Help text */}
       <Box marginTop={1}>
-        <Text color={mutedTextColor} wrap="truncate">
-          Path: {currentPath}
+        <Text color={mutedTextColor} italic>
+          {isFocused ? 'Press D to download selected file' : 'Arrow keys to navigate'}
         </Text>
       </Box>
     </Box>

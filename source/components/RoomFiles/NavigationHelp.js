@@ -1,4 +1,4 @@
-// source/components/RoomFiles/NavigationHelp.js
+// Updated NavigationHelp.js for Hyperblobs (removed directory-related options)
 import React from 'react';
 import { Box, Text } from 'ink';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
@@ -23,12 +23,9 @@ const NavigationHelp = ({ width = 80 }) => {
   const navDownKey = getBindingDescription(contextBindings.navigateDown);
   const pageUpKey = getBindingDescription(contextBindings.pageUp);
   const pageDownKey = getBindingDescription(contextBindings.pageDown);
-  const openDirKey = getBindingDescription(contextBindings.openDir);
-  const parentDirKey = getBindingDescription(contextBindings.parentDir);
   const previewScrollUpKey = getBindingDescription(contextBindings.previewScrollUp);
   const previewScrollDownKey = getBindingDescription(contextBindings.previewScrollDown);
   const downloadKey = getBindingDescription(contextBindings.download);
-  const newFolderKey = getBindingDescription(contextBindings.newFolder);
   const deleteKey = getBindingDescription(contextBindings.delete);
   const refreshKey = getBindingDescription(contextBindings.refresh);
   const backKey = getBindingDescription(contextBindings.back);
@@ -46,10 +43,9 @@ const NavigationHelp = ({ width = 80 }) => {
         <Text wrap="truncate">
           <Text color={successColor}>{navUpKey}/{navDownKey}</Text>: Navigate |
           <Text color={successColor}> {pageUpKey}/{pageDownKey}</Text>: Page Up/Down |
-          <Text color={successColor}> {openDirKey}</Text>: Open dir |
-          <Text color={successColor}> {parentDirKey}</Text>: Parent dir |
           <Text color={successColor}> {backKey}</Text>: Return to chat |
-          <Text color={successColor}> {uploadFileKey}</Text> Upload File
+          <Text color={successColor}> {uploadFileKey}</Text>: Upload File |
+          <Text color={successColor}> {refreshKey}</Text>: Refresh
         </Text>
       </Box>
 
@@ -57,9 +53,7 @@ const NavigationHelp = ({ width = 80 }) => {
         <Text wrap="truncate">
           <Text color={successColor}>{previewScrollUpKey}/{previewScrollDownKey}</Text>: Scroll preview |
           <Text color={successColor}> {downloadKey}</Text>: Download file |
-          <Text color={successColor}> {newFolderKey}</Text>: New folder |
-          <Text color={successColor}> {deleteKey}</Text>: Delete |
-          <Text color={successColor}> {refreshKey}</Text>: Refresh
+          <Text color={successColor}> {deleteKey}</Text>: Delete file
         </Text>
       </Box>
     </Box>

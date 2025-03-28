@@ -171,6 +171,17 @@ class RoomBase extends ReadyResource {
       // Then insert the new metadata
       await context.view.insert('@roombase/metadata', data);
     });
+
+    // Add stub handlers for Hyperdrive-related commands (required by the router)
+    this.router.add('@roombase/set-drive-key', async (data, context) => {
+      // Stub implementation - no-op for Hyperblobs
+      console.log('Ignoring set-drive-key command (using Hyperblobs)');
+    });
+
+    this.router.add('@roombase/update-drive-metadata', async (data, context) => {
+      // Stub implementation - no-op for Hyperblobs
+      console.log('Ignoring update-drive-metadata command (using Hyperblobs)');
+    });
   }
 
   _boot(opts = {}) {
