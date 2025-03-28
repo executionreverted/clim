@@ -11,7 +11,7 @@ import Hypercore from 'hypercore';
 import Hyperswarm from 'hyperswarm';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
 const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs/temp/');
@@ -361,6 +361,8 @@ export function RoomBaseProvider({ children }) {
           console.error(`Error closing corestore for room ${roomId}:`, err);
         });
       }
+      blobStore?.close()
+      blobSwarm?.destroy()
       corestores.current.clear();
     };
   }, []);
@@ -963,6 +965,7 @@ export function RoomBaseProvider({ children }) {
 
         // Get room info
         const roomInfo = await room.getRoomInfo();
+        writeFileSync('./joinedroom', JSON.stringify(roomInfo))
         const roomName = roomInfo?.name || 'Joined Room';
 
         // Store the room instance
