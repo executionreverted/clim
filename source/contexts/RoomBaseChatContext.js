@@ -255,6 +255,8 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
                 true
               );
             }
+            setLoading(false);
+            writeFileSync('./joinerror', JSON.stringify(err.message))
           })
           .finally(() => {
             setLoading(false);
