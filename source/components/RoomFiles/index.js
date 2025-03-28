@@ -113,7 +113,7 @@ const RoomFiles = ({ onBack }) => {
       return;
     }
 
-    if (downloadedFiles[selectedFile.name]) {
+    if (downloadedFiles[selectedFile.name].downloaded) {
       open(downloadsPath)
       return
     }
@@ -153,6 +153,7 @@ const RoomFiles = ({ onBack }) => {
 
       // Open the downloads folder to show the user where the file is
       try {
+        checkDownloadStatus()
         await open(downloadsPath);
       } catch (openErr) {
         console.error('Could not open downloads folder:', openErr);
@@ -302,7 +303,7 @@ const RoomFiles = ({ onBack }) => {
 
   useEffect(() => {
     checkDownloadStatus();
-  }, [files, roomFiles]);
+  }, [files, roomFiles, roomFiles.length]);
 
   return (
     <Box
