@@ -10,20 +10,19 @@ import useThemeUpdate from "../../hooks/useThemeUpdate.js";
 import FileList from "./FileList.js";
 import FilePreview from "./FilePreview.js";
 import NavigationHelp from "./NavigationHelp.js";
-import FileUpload from "./FileUpload.js";
 import open from 'open'
+
 const RoomFiles = ({ onBack }) => {
   const {
     activeRoomId,
     files,
     fileLoading,
     loadRoomFiles,
-    uploadFile,
     downloadFile,
     deleteFile,
     sendMessage,
-    TEMP,
-    downloading
+    downloading,
+    downloadProgress,
   } = useChat();
 
   const { stdout } = useStdout();
@@ -341,6 +340,7 @@ const RoomFiles = ({ onBack }) => {
           height={contentHeight}
           isFocused={true}
           downloadedFiles={downloadedFiles}
+          downloadProgress={downloadProgress}
         />
 
         {/* Preview panel */}

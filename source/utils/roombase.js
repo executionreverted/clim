@@ -11,7 +11,7 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js';
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 import { getEncoding } from './spec/hyperdispatch/messages.js';
-import fs from 'fs';
+import fs, { writeFileSync } from 'fs';
 import path from 'path';
 
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
@@ -609,23 +609,14 @@ class RoomBase extends ReadyResource {
   }
 
 
-
-  // Add this to source/utils/roombase.js as a new method
-
-  /**
-   * Directly download a file from a remote blob store using Hyperswarm to find peers
-   * @param {Object} fileRef - The file reference containing blobId and coreKey
-   * @returns {Promise<Buffer>} - The downloaded file data
-   */
-
   async downloadFile(file, configPath, options = {}) {
-    const { timeout = 60000 } = options;
+    const { timeout = 60000, onProgress } = options;
     let blobRef = file;
     let remoteCore = null;
     let topic = null;
+    let localSwarm = null;
 
     const tempDir = path.join(configPath, `hypercore-download-${Date.now()}`);
-
     try {
       // Make sure directories exist
       if (!fs.existsSync(configPath)) {
@@ -641,6 +632,7 @@ class RoomBase extends ReadyResource {
         try {
           // Ensure blobId is properly formatted
           const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
+          if (onProgress) onProgress(100, "Local blob is used");
           return await this.blobStore.get(blobId);
         } catch (localErr) {
         }
@@ -653,35 +645,81 @@ class RoomBase extends ReadyResource {
 
       // Create hypercore for download
       remoteCore = new Hypercore(tempDir, coreKey, { wait: true });
+      if (onProgress) onProgress(10, "Connected to core");
+
       await remoteCore.ready();
-      const localSwarm = new Hyperswarm()
-      const topic = await localSwarm.join(coreKey)
+      if (onProgress) onProgress(20, "Initiated core");
+
+      localSwarm = new Hyperswarm();
+      topic = await localSwarm.join(coreKey);
+      if (onProgress) onProgress(30, "Joined to swarm");
 
       const connectionHandler = (conn) => {
         remoteCore.replicate(conn);
+        if (onProgress) onProgress(40, "Replication is ready");
       };
 
-
       localSwarm.on('connection', connectionHandler);
-      // Set up connection handler
+
       // Wait for peers to connect
       await new Promise(resolve => setTimeout(resolve, 3000));
       await remoteCore.update({ wait: true });
+      if (onProgress) onProgress(50, "Starting hyperblob");
 
       // Create hyperblobs to access the data
       const remoteBlobs = new Hyperblobs(remoteCore);
       await remoteBlobs.ready();
+      if (onProgress) onProgress(60, "Hyperblob is ready");
 
       // Get the blob ID in the correct format
       const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
 
-      // Download the blob
-      const fileData = await remoteBlobs.get(blobId, {
-        wait: true,
-        timeout: 0
-      });
+      // Get metadata to know the file size
+      let blobSize = blobRef.size;
+      // Download the blob using streaming for progress tracking
+      let fileData;
+      if (blobSize > 0) {
+        // Use streaming for better progress tracking
+        const chunks = [];
+        let downloadedBytes = 0;
 
-      await localSwarm.destroy()
+        const stream = remoteBlobs.createReadStream(blobId);
+
+        await new Promise((resolve, reject) => {
+          stream.on('data', chunk => {
+            chunks.push(chunk);
+            downloadedBytes += chunk.length;
+
+            // Update progress from 60% to 90% based on download progress
+            if (onProgress && blobSize > 0) {
+              const percentage = 60 + Math.floor(30 * (downloadedBytes / blobSize));
+              onProgress(Math.min(90, percentage), "Downloading...");
+            }
+          });
+
+          stream.on('error', err => {
+            reject(err);
+          });
+
+          stream.on('end', () => {
+            resolve();
+          });
+        });
+
+        // Combine chunks
+        fileData = Buffer.concat(chunks);
+      } else {
+        // Fall back to get() if we couldn't get the size
+        fileData = await remoteBlobs.get(blobId, {
+          wait: true,
+          timeout: 0
+        });
+      }
+
+      if (onProgress) onProgress(95, "Saving file to disk");
+
+      await localSwarm.destroy();
+
       // Clean up
       if (topic) await topic.destroy().catch(noop);
       if (remoteBlobs && remoteBlobs.close) await remoteBlobs.close().catch(noop);
@@ -694,12 +732,16 @@ class RoomBase extends ReadyResource {
         console.error('Error removing temp directory:', rmErr);
       }
 
+      if (onProgress) onProgress(100, "Completed");
       return fileData;
     } catch (err) {
       console.error('Error downloading file:', err);
-      fs.writeFileSync('./downloaderr', JSON.stringify(err.message))
+      fs.writeFileSync('./downloaderr', JSON.stringify(err.message));
       try {
-        await localSwarm?.removeAllListeners('connection');
+        if (localSwarm) {
+          localSwarm.removeAllListeners('connection');
+          await localSwarm.destroy().catch(noop);
+        }
         if (topic) await topic.destroy().catch(noop);
         if (remoteCore) await remoteCore.close().catch(noop);
         if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
@@ -710,6 +752,7 @@ class RoomBase extends ReadyResource {
       return null;
     }
   }
+  // Add this to source/utils/roombase.js as a new method
 
 
   // Enhanced getFiles method

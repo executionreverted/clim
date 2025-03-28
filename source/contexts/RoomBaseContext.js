@@ -1,5 +1,5 @@
 // contexts/RoomBaseContext.js - Updated for Hyperblobs
-import React, { useCallback, createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { useState, useCallback, createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import fs, { writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -11,7 +11,7 @@ import Hypercore from 'hypercore';
 import Hyperswarm from 'hyperswarm';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const BLOBS_DIR = path.join(CONFIG_DIR, 'blobs');
 const REMOTE_BLOBS_PATH = path.join(CONFIG_DIR, 'remote-blobs/temp/');
@@ -253,6 +253,8 @@ export function RoomBaseProvider({ children }) {
   const loadingRooms = useRef(new Set());
   const blobStore = useRef(null)
   const blobSwarm = useRef(null)
+  const [downloadProgress, setDownloadProgress] = useState({});
+
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -484,18 +486,45 @@ export function RoomBaseProvider({ children }) {
       ensureDirectoryExists(REMOTE_BLOBS_PATH);
 
       // Log download attempt
+      const fileId = typeof filePathOrRef === 'object' ? filePathOrRef.path : filePathOrRef;
+      setDownloadProgress(prev => ({ ...prev, [fileId]: { percent: 0, status: 'starting' } }));
 
+      // Progress update function to call during download
+      const updateProgress = (percent, text) => {
+        setDownloadProgress(prev => ({
+          ...prev,
+          [fileId]: { percent, text, status: 'downloading' }
+        }));
+      };
       // Download the file using roombase's downloadFile
-      const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH);
+      const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH,
+        {
+          onProgress: updateProgress
+        }
+      );
+
+
+      setDownloadProgress(prev => ({
+        ...prev,
+        [fileId]: { percent: 100, status: 'complete' }
+      }));
 
       if (!data) {
         console.error('No data returned from download operation');
+        setDownloadProgress(prev => ({
+          ...prev,
+          [fileId]: { percent: 0, status: 'failed', error: err.message }
+        }));
         return null;
       }
 
       // Return the downloaded data
       return data;
     } catch (err) {
+      setDownloadProgress(prev => ({
+        ...prev,
+        [fileId]: { percent: 0, status: 'failed', error: err.message }
+      }));
 
       dispatch({ type: ACTIONS.SET_DOWNLOADING, payload: false });
       console.error(`Error downloading file from room ${roomId}:`, err);
@@ -925,6 +954,7 @@ export function RoomBaseProvider({ children }) {
         const room = await RoomBase.joinRoom(store, inviteCode, {
           blobStore, blobCore
         });
+
         await room.ready();
 
         // Only now store the corestore after successful pairing
@@ -1287,6 +1317,7 @@ export function RoomBaseProvider({ children }) {
     loadMoreMessages,
     messageCounts: state.messageCounts,
     downloading: state.downloading,
+    downloadProgress,
 
     files: state.files,
     fileLoading: state.fileLoading,

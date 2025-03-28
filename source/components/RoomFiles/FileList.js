@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 import { filesize } from 'filesize';
 import useThemeUpdate from '../../hooks/useThemeUpdate.js';
 import path from 'path';
+import { writeFileSync } from 'fs';
 
 
 function shortenFileName(fileName, maxLength = 12) {
@@ -22,22 +23,139 @@ function shortenFileName(fileName, maxLength = 12) {
   return `${baseName.slice(0, prefixLength)}...${baseName.slice(-suffixLength)}${extension}`;
 }
 
+const getFileStatus = (file, downloadStatus, downloadProgress) => {
+  // Check if file is currently downloading
+  if (downloadProgress && downloadProgress[file.path]?.status === 'downloading') {
+    return { status: 'downloading', icon: '↓', color: 'yellow' };
+  }
+
+  // Check if download failed
+  if (downloadProgress && downloadProgress[file.path]?.status === 'failed') {
+    return { status: 'failed', icon: '✗', color: 'red' };
+  }
+
+  // Check if file is already downloaded
+  if (downloadStatus?.downloaded) {
+    return { status: 'downloaded', icon: '✓', color: 'green' };
+  }
+
+  // Check if file is shared by current user
+  if (file.coreKey === identity?.publicKey) {
+    return { status: 'owned', icon: '⚡', color: 'blue' };
+  }
+
+  // Default - available for download
+  return { status: 'available', icon: '↓', color: 'gray' };
+};
+
+const getFileTypeIcon = (fileName) => {
+  const ext = path.extname(fileName).toLowerCase();
+
+  // Images
+  if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'].includes(ext)) {
+    return '🖼️';
+  }
+
+  // Documents
+  if (['.pdf', '.doc', '.docx', '.txt', '.md'].includes(ext)) {
+    return '📄';
+  }
+
+  // Media
+  if (['.mp3', '.wav', '.ogg', '.flac', '.m4a'].includes(ext)) {
+    return '🎵';
+  }
+  if (['.mp4', '.mov', '.avi', '.mkv', '.webm'].includes(ext)) {
+    return '🎬';
+  }
+
+  // Archives
+  if (['.zip', '.rar', '.tar', '.gz', '.7z', '.dmg'].includes(ext)) {
+    return '📦';
+  }
+
+  // Code
+  if (['.js', '.py', '.cpp', '.html', '.css', '.jsx', '.ts'].includes(ext)) {
+    return '📝';
+  }
+
+  // Default
+  return '📎';
+};
+
 // Memoized file item component
 // Replace the FileItem component in source/components/RoomFiles/FileList.js
-const FileItem = memo(({ file, isSelected, isFocused, width, colors, downloadStatus }) => {
+const FileItem = memo(({ file, isSelected, isFocused, width, colors, downloadStatus, downloadProgress }) => {
   const name = file.name || path.basename(file.path || '') || 'Unknown';
-  const downloadIcon = downloadStatus?.downloaded ? '✓' : '↓';
-  const downloadColor = downloadStatus?.downloaded ? colors.successColor : colors.warningColor;
+
+  // Determine status and display
+  let statusIcon, statusColor;
+  let progressBar = null;
+  if (downloadProgress && downloadProgress[file.name]) {
+    const progress = downloadProgress[file.name];
+
+    if (progress.status === 'downloading') {
+      statusIcon = '↓';
+      statusColor = colors.warningColor;
+
+      // Create simple ASCII progress bar
+      const percent = progress.percent;
+      const barWidth = 10;
+      const filledChars = Math.floor((percent / 100) * barWidth);
+      const emptyChars = barWidth - filledChars;
+
+      progressBar = (
+        <Box gapY={1} flexDirection={"column"}>
+          <Box>
+            <Text color={colors.successColor}>{'█'.repeat(filledChars)}</Text>
+            <Text color={colors.mutedTextColor}>{'░'.repeat(emptyChars)}</Text>
+          </Box>
+          <Text color={colors.secondaryColor}> {percent}%</Text>
+          {
+            progress?.text && <Text color={colors.textColor}>{progress.text}</Text>
+          }
+        </Box>
+      );
+    } else if (progress.status === 'complete') {
+      statusIcon = '✓';
+      statusColor = colors.successColor;
+    } else if (progress.status === 'failed') {
+      statusIcon = '✗';
+      statusColor = colors.errorColor;
+    }
+  } else {
+    statusIcon = downloadStatus?.downloaded ? '✓' : '↓';
+    statusColor = downloadStatus?.downloaded ? colors.successColor : colors.warningColor;
+  }
 
   return (
-    <Box gap={1} width={width} overflow="hidden">
-      <Text flexGrow={1} width={width - 4} wrap="truncate" color={isSelected ? colors.secondaryColor : colors.primaryColor}>
-        {isSelected && isFocused ? '> ' : ' '}
-        {shortenFileName(name)}
-      </Text>
-      <Text bold color={downloadColor}>
-        {downloadIcon}
-      </Text>
+    <Box flexDirection="column" width={width}>
+      <Box gap={1}>
+        <Text flexGrow={1} wrap="truncate" color={isSelected ? colors.secondaryColor : colors.primaryColor}>
+          {
+            getFileTypeIcon(file.name)
+          }
+          {isSelected && isFocused ? '> ' : ' '}
+
+          {shortenFileName(name)}
+        </Text>
+        <Text bold color={statusColor}>{statusIcon}</Text>
+      </Box>
+
+      {isSelected && progressBar && (
+        <Box marginLeft={2}>
+          {progressBar}
+        </Box>
+      )}
+
+      {isSelected && downloadProgress && downloadProgress[file.name]?.error && (
+        <Box marginLeft={2}>
+          <Text color={colors.errorColor}>
+            Error: {downloadProgress[file.name].error.substring(0, 30)}
+            {downloadProgress[file.name].error.length > 30 ? '...' : ''}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 });
@@ -53,7 +171,8 @@ const FileList = ({
   width = 40,
   height = 20,
   isFocused = false,
-  downloadedFiles = {}
+  downloadedFiles = {},
+  downloadProgress,
 }) => {
   const currentTheme = useThemeUpdate();
   const {
@@ -142,6 +261,7 @@ const FileList = ({
                   isFocused={isFocused}
                   width={width}
                   downloadStatus={downloadedFiles[file.name]}
+                  downloadProgress={downloadProgress}
                   colors={{
                     primaryColor,
                     secondaryColor,
