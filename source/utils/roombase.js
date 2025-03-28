@@ -582,7 +582,6 @@ class RoomBase extends ReadyResource {
    */
   async uploadFile(data, filePath, options = {}) {
     if (!this.blobStore) {
-      console.error('Failed to initialize blob store');
       writeFileSync('./blobstore', "error")
       return null;
     }
@@ -594,7 +593,6 @@ class RoomBase extends ReadyResource {
       const blobId = await this.blobStore.put(data);
 
       // Log the exact structure of the blob ID for debugging
-      console.log('Blob ID after upload:', blobId);
 
       return {
         path: fileName,
@@ -628,7 +626,6 @@ class RoomBase extends ReadyResource {
     let topic = null;
 
     const tempDir = path.join(configPath, `hypercore-download-${Date.now()}`);
-    console.log('Download request for blob:', typeof blobRef === 'string' ? blobRef : JSON.stringify(blobRef, null, 2));
 
     try {
       // Make sure directories exist
@@ -642,13 +639,11 @@ class RoomBase extends ReadyResource {
       // If file is in our own blob store, use existing blob store
       if (this.blobStore && blobRef.coreKey &&
         blobRef.coreKey === this.blobCore.key.toString('hex')) {
-        console.log('Using local blob store for download');
         try {
           // Ensure blobId is properly formatted
           const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
           return await this.blobStore.get(blobId);
         } catch (localErr) {
-          console.error('Error accessing local blob:', localErr);
         }
       }
 
@@ -683,7 +678,6 @@ class RoomBase extends ReadyResource {
       writeFileSync('./file', "ready")
       // Get the blob ID in the correct format
       const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
-      console.log('Attempting to get blob with ID:', blobId);
 
       // Download the blob
       const fileData = await remoteBlobs.get(blobId, {

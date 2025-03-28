@@ -1,5 +1,5 @@
 // source/hooks/useKeymap.js
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useInput } from 'ink';
 import { loadKeymap, matchesKeyBinding, getBindingsForContext } from '../utils/keymap.js';
 
@@ -29,7 +29,6 @@ export function useKeymap(context, handlers = {}, options = {}) {
     if (input === " ") key.space = true;
 
     // Debug log to see what keys are being pressed (uncomment for debugging)
-    // console.log('Key pressed:', { input, key, contextBindings, handlers });
 
     for (const [action, binding] of Object.entries(contextBindings)) {
       if (matchesKeyBinding({ input, key, ...key }, binding)) {

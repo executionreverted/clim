@@ -28,10 +28,6 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   const timestamp = file.timestamp ? new Date(file.timestamp).toLocaleString() : 'Unknown date';
 
   // For debugging, log object structure when selected
-  if (isSelected && file.blobId) {
-    console.log('Selected file blob reference:',
-      typeof file.blobId === 'object' ? file.blobId : { blobId: file.blobId, coreKey: file.coreKey });
-  }
 
   // Set icon based on file type
   let icon = '📄';
@@ -50,8 +46,8 @@ const FileItem = memo(({ file, isSelected, isFocused, width, colors }) => {
   const textColor = isSelected ? colors.secondaryColor : colors.textColor;
 
   return (
-    <Box>
-      <Text wrap="truncate" color={textColor}>
+    <Box overflow={"hidden"}>
+      <Text overflow={"hidden"} wrap="truncate" color={textColor}>
         {isSelected && isFocused ? '>' : ' '} {icon} {name}
         <Text color={colors.mutedTextColor}> ({size})</Text>
         {isSelected && <Text color={colors.primaryColor}> - From: {sender}</Text>}
@@ -135,7 +131,7 @@ const FileList = ({
           </Text>
           <Box marginTop={1}>
             <Text color={mutedTextColor}>
-              Press 'u' to upload a file
+              Press 's' in chat room to upload files
             </Text>
           </Box>
         </Box>
@@ -156,7 +152,7 @@ const FileList = ({
               const actualIndex = index + safeVisibleStartIndex;
               return (
                 <FileItem
-                  key={file.path || `file-${actualIndex}`}
+                  key={file.path + file.timestamp || `file-${actualIndex}`}
                   file={file}
                   isSelected={actualIndex === safeSelectedIndex}
                   isFocused={isFocused}

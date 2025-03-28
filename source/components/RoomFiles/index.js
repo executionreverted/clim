@@ -123,14 +123,10 @@ const RoomFiles = ({ onBack }) => {
   // Replace the handleDownloadFile function in source/components/RoomFiles/index.js
   const handleDownloadFile = useCallback(async () => {
     if (!selectedFile) {
-      console.log('No file selected to download');
       return;
     }
 
     try {
-      // Log the selected file contents for debugging
-      console.log('Starting download for file:', JSON.stringify(selectedFile, null, 2));
-
       // Get the downloads folder path
       const downloadsPath = download();
 
@@ -233,7 +229,7 @@ const RoomFiles = ({ onBack }) => {
       }
     },
     download: () => {
-      if (isDeleteConfirmMode || showUploadDialog) return;
+      if (downloading || isDeleteConfirmMode || showUploadDialog) return;
       handleDownloadFile();
     },
     previewScrollUp: () => {
@@ -295,6 +291,8 @@ const RoomFiles = ({ onBack }) => {
         <Text bold>
           Room Files
           {fileLoading ? ' (Loading...)' : `(${roomFiles.length} files)`}
+
+          {downloading ? 'Downloading file...' : ''}
         </Text>
       </Box>
 

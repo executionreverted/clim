@@ -297,7 +297,6 @@ export function RoomBaseProvider({ children }) {
 
       // Write file synchronously to ensure it completes
       fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
-      console.log(`Saved ${roomKeys.length} rooms to ${ROOMS_FILE}`);
     } catch (err) {
       console.error('Error saving room keys:', err);
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
@@ -322,7 +321,6 @@ export function RoomBaseProvider({ children }) {
           // Add extra safety with try-catch for JSON parsing
           try {
             const roomKeys = JSON.parse(roomKeysStr);
-            console.log(`Found ${roomKeys.length} rooms in storage file`);
 
             // Initialize rooms with debug logging
             initializeRooms(roomKeys);
@@ -336,7 +334,6 @@ export function RoomBaseProvider({ children }) {
           process.exit("1");
         }
       } else {
-        console.log(`No rooms file found, creating empty one at ${ROOMS_FILE}`);
         // Ensure directory exists before writing file
         ensureDirectoryExists(path.dirname(ROOMS_FILE));
         fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
@@ -487,8 +484,6 @@ export function RoomBaseProvider({ children }) {
       ensureDirectoryExists(REMOTE_BLOBS_PATH);
 
       // Log download attempt
-      console.log('Attempting to download file:',
-        filePathOrRef?.name || filePathOrRef?.path || filePathOrRef);
 
       // Download the file using roombase's downloadFile
       const data = await room.downloadFile(filePathOrRef, REMOTE_BLOBS_PATH);
@@ -521,7 +516,6 @@ export function RoomBaseProvider({ children }) {
 
     // Prevent multiple concurrent loads
     if (loadingRooms.current.has(roomId)) {
-      console.log(`Skip loading files for ${roomId} - already in progress`);
       return [];
     }
 
@@ -608,7 +602,6 @@ export function RoomBaseProvider({ children }) {
   }, []);
 
   const createBlobCore = async () => {
-    console.log(`Creating blob core in ${BLOBS_DIR}`);
 
     // Ensure blob directory exists
     if (!fs.existsSync(BLOBS_DIR)) {
@@ -623,10 +616,9 @@ export function RoomBaseProvider({ children }) {
     const topic = swarm.join(blobsCore.key);
 
     swarm.on('connection', (conn) => {
-      console.log('Peer connected, sharing...');
       blobsCore.replicate(conn);
     });
-    await swarm.flush()
+    swarm.flush()
 
 
     blobSwarm.current = swarm
@@ -639,19 +631,15 @@ export function RoomBaseProvider({ children }) {
       let blobCore = corestores.current.get('blobcore');
 
       if (!blobCore) {
-        console.log('Creating new blob core and store');
         const result = await createBlobCore();
         blobCore = result.blobsCore;
       } else {
-        console.log('Using existing blob core');
       }
 
       // Ensure blob store is always created with a ready core
       if (!blobStore.current) {
-        console.log('Creating new Hyperblobs store');
         blobStore.current = new Hyperblobs(blobCore);
         await blobStore.current.ready();
-        console.log('Hyperblobs store ready');
       }
 
       return {
@@ -981,7 +969,6 @@ export function RoomBaseProvider({ children }) {
               messages = messageStream;
             }
 
-            console.log(`Loaded ${messages.length} initial messages for room ${roomId}`);
           } catch (msgErr) {
             console.error('Failed to retrieve messages:', msgErr);
             // Still proceed with empty messages array
