@@ -190,7 +190,6 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
       return true;
     } catch (err) {
       console.error(`Error loading files for room ${roomId}:`, err);
-      writeFileSync('./loadfiles', JSON.stringify(err.message))
       if (activeRoomId) {
         sendMessage(
           activeRoomId,

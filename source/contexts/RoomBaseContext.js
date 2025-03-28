@@ -548,7 +548,6 @@ export function RoomBaseProvider({ children }) {
         return files;
       } catch (err) {
         console.error(`Error loading files for room ${roomId}:`, err);
-        writeFileSync('./loadroomfiles', JSON.stringify(err.message))
         return [];
       } finally {
         dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
@@ -886,7 +885,6 @@ export function RoomBaseProvider({ children }) {
       dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
       return roomId;
     } catch (err) {
-      writeFileSync('./creationerr', JSON.stringify(err.message))
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to create room: ${err.message}` });
       return null;
     }

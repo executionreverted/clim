@@ -11,7 +11,7 @@ import { Router, dispatch } from './spec/hyperdispatch/index.js';
 import db from './spec/db/index.js';
 import crypto from 'crypto';
 import { getEncoding } from './spec/hyperdispatch/messages.js';
-import fs, { write, writeFileSync } from 'fs';
+import fs from 'fs';
 import path from 'path';
 
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
@@ -281,7 +281,6 @@ class RoomBase extends ReadyResource {
         const dispatchData = dispatch('@roombase/set-metadata', roomData);
         await this.base.append(dispatchData);
       } catch (e) {
-        writeFileSync('./init', JSON.stringify(e.message));
       }
     } else {
       // Update local properties from stored values
@@ -420,7 +419,6 @@ class RoomBase extends ReadyResource {
       return msg.id;
     } catch (err) {
 
-      writeFileSync('./sendmsg', JSON.stringify(e.message));
       console.error(`Error saving message with dispatch:`, err);
       this.emit('mistake', JSON.stringify(err.message));
     }
@@ -582,7 +580,6 @@ class RoomBase extends ReadyResource {
    */
   async uploadFile(data, filePath, options = {}) {
     if (!this.blobStore) {
-      writeFileSync('./blobstore', "error")
       return null;
     }
 
@@ -659,7 +656,6 @@ class RoomBase extends ReadyResource {
       const topic = await localSwarm.join(coreKey)
 
       const connectionHandler = (conn) => {
-        writeFileSync('./connhand', "connected")
         remoteCore.replicate(conn);
       };
 
@@ -670,12 +666,10 @@ class RoomBase extends ReadyResource {
       await new Promise(resolve => setTimeout(resolve, 3000));
       await remoteCore.update({ wait: true });
 
-      writeFileSync('./file', "core ready")
       // Create hyperblobs to access the data
       const remoteBlobs = new Hyperblobs(remoteCore);
       await remoteBlobs.ready();
 
-      writeFileSync('./file', "ready")
       // Get the blob ID in the correct format
       const blobId = typeof blobRef.blobId === 'object' ? blobRef.blobId : blobRef.blobId;
 
@@ -685,7 +679,6 @@ class RoomBase extends ReadyResource {
         timeout: 30000
       });
 
-      writeFileSync('./filedata', JSON.stringify(fileData))
       await localSwarm.destroy()
       // Clean up
       if (topic) await topic.destroy().catch(noop);
@@ -701,7 +694,6 @@ class RoomBase extends ReadyResource {
 
       return fileData;
     } catch (err) {
-      writeFileSync('./err', JSON.stringify(err.message))
       console.error('Error downloading file:', err);
       try {
         await localSwarm?.removeAllListeners('connection');
