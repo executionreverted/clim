@@ -623,118 +623,150 @@ class RoomBase extends ReadyResource {
    */
 
   async downloadFile(file, configPath, options = {}) {
-    try {
-      let blobRef = file;
-      console.log('Download request for blob:', JSON.stringify(blobRef, null, 2));
+    const { timeout = 60000 } = options; // Default 60s timeout
+    let blobRef = file;
+    let downloadStore = null;
+    let remoteCore = null;
+    let topic = null;
 
-      // Replication klasörü varsa oluştur
+
+    const tempDir = path.join(configPath, `hypercore-download-${Date.now()}`);
+    console.log('Download request for blob:',
+      typeof blobRef === 'string' ? blobRef : JSON.stringify(blobRef, null, 2));
+
+    try {
+      // Make sure temporary directory exists
       if (!fs.existsSync(configPath)) {
         fs.mkdirSync(configPath, { recursive: true });
       }
 
-      // Aynı configPath kullanarak geçici bir dizin oluştur
-      const tempDir = path.join(configPath, 'hypercore-download');
+      // Create a temp directory for the download cores
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      try {
-        // Core anahtarını hazırla
-        const coreKey = typeof blobRef.coreKey === 'string'
-          ? Buffer.from(blobRef.coreKey, 'hex')
-          : blobRef.coreKey;
-
-        // Corestore oluştur
-        const downloadStore = new Corestore(tempDir);
-        await downloadStore.ready();
-
-        // Hypercore oluştur ve hazır olmasını bekle
-        const remoteCore = downloadStore.get({ key: coreKey });
-        await remoteCore.ready();
-
-        // Swarm'a katıl ve peer'leri bul
-        const discoveryKey = crypto.createHash('sha256').update(coreKey).digest();
-        console.log('Actively searching for peers with core:', coreKey.toString('hex'));
-
-        const topic = this.swarm.join(discoveryKey, { client: true, server: false });
-
-        // Swarm bağlantıları için replikasyon başlat
-        this.swarm.on('connection', conn => {
-          downloadStore.replicate(conn);
-        });
-
-        // Senkronizasyonu bekle
-        let timeout = 60000; // 60 saniye bekleyelim
-        const startTime = Date.now();
-        let lastLength = remoteCore.length;
-
-        while (Date.now() - startTime < timeout) {
-          await remoteCore.update(); // Verinin güncellenmesini bekle
-
-          if (remoteCore.length > 0 && remoteCore.length !== lastLength) {
-            console.log(`Remote core updated: ${remoteCore.length} blocks`);
-            lastLength = remoteCore.length;
-          }
-
-          if (remoteCore.length > 0) {
-            break; // Veri geldiyse çık
-          }
-
-          await new Promise(r => setTimeout(r, 1000)); // 1 saniye bekle
-        }
-
-        if (remoteCore.length === 0) {
-          throw new Error('No data available from peers after 60s timeout');
-        }
-
-        // Blob mağazasını oluştur
-        const remoteBlobs = new Hyperblobs(remoteCore);
-
-        // Blob'u al
-        console.log(`Retrieving blob ID: ${JSON.stringify(blobRef.blobId)}`);
-        const fileData = await remoteBlobs.get(blobRef.blobId, {
-          wait: true,
-          timeout: 30000 // 30 saniye bekleyelim
-        });
-
-        // Swarm bağlantısını temizle
-        this.swarm.removeAllListeners('connection');
-        if (topic) await topic.destroy();
-
-        // Kapatma işlemleri
-        await remoteBlobs.close?.();
-        await remoteCore.close();
-        await downloadStore.close();
-
-        // Geçici klasörü temizle
-        fs.rmSync(tempDir, { recursive: true, force: true });
-
-        return fileData;
-      } catch (err) {
-        console.error('Error downloading via remote core:', err);
-
-        // Yerel blobStore'dan dene
-        if (this.blobStore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
-          console.log('Falling back to local blob store');
+      // If file is our own blob, use our existing blob store
+      if (this.blobStore &&
+        blobRef.coreKey &&
+        blobRef.coreKey === this.blobCore.key.toString('hex')) {
+        console.log('Using local blob store for file download');
+        try {
           return await this.blobStore.get(blobRef.blobId);
+        } catch (localErr) {
+
+          writeFileSync('./doerr', JSON.stringify(localErr.message))
+          console.error('Error accessing local blob:', localErr);
+          // Continue to try the remote download path
+        }
+      }
+
+      // Prepare core key
+      const coreKey = typeof blobRef.coreKey === 'string'
+        ? Buffer.from(blobRef.coreKey, 'hex')
+        : blobRef.coreKey;
+
+      // Create corestore for download
+      remoteCore = new Hypercore(tempDir, coreKey);
+      await remoteCore.ready();
+      await remoteCore.update({ wait: true });
+      // Calculate discovery key and join swarm
+
+      // Join as client only - we want to fetch data, not serve it
+      topic = await this.swarm.join(coreKey, { client: true, server: false });
+
+      // Set up connection handler
+      const connectionHandler = (conn) => {
+        downloadStore.replicate(conn);
+      };
+
+      this.swarm.on('connection', connectionHandler);
+
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      try {
+        await remoteCore.update({ wait: true });
+      } catch (e) {
+        writeFileSync('./doerr', JSON.stringify(e.message))
+        console.log('Initial update failed, continuing to wait for peers');
+      }
+
+      // Check if we timed out
+      // Create hyperblobs to access the data
+      const remoteBlobs = new Hyperblobs(remoteCore);
+
+      // Wait for remoteBlobs to be ready
+      await remoteBlobs.ready();
+
+      writeFileSync('./attempt', JSON.stringify(blobRef.blobId))
+      // Try to get the blob
+      const fileData = await remoteBlobs.get(blobRef.blobId, {
+        wait: true,
+        timeout: 30000 // 30s timeout for blob retrieval
+      });
+
+      writeFileSync('./dowloadedfile', JSON.stringify(fileData))
+      this.swarm.removeListener('connection', connectionHandler);
+      if (topic) {
+        await topic.destroy().catch(err =>
+          console.error('Error destroying topic:', err));
+      }
+
+      // Close cores and stores
+      if (remoteBlobs && remoteBlobs.close) {
+        await remoteBlobs.close().catch(noop);
+      }
+      if (remoteCore) {
+        await remoteCore.close().catch(noop);
+      }
+
+      // Remove temp directory after successful download
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (rmErr) {
+        console.error('Error removing temp directory:', rmErr);
+      }
+
+      return fileData;
+    } catch (err) {
+      console.error('Error downloading file:', err);
+      writeFileSync('./doer2', JSON.stringify(err.message))
+      // Clean up resources if an error occurred
+      try {
+        // Remove swarm listeners
+        this.swarm.removeAllListeners('connection');
+
+        // Clean up topic
+        if (topic) {
+          await topic.destroy().catch(noop);
         }
 
-        // Kullanıcıya hata mesajı döndür
-        return Buffer.from(`
-      Unable to download file: ${blobRef.name || 'unknown'}
-      =======================================
+        // Close cores and stores
+        if (remoteCore) {
+          await remoteCore.close().catch(noop);
+        }
 
-      The file could not be downloaded because the peer who shared this file is offline.
-      Try again when more peers are online.
-      `);
+        // Remove temp directory
+        if (tempDir) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      } catch (cleanupErr) {
+
+        writeFileSync('./doerr', JSON.stringify(cleanupErr.message))
+        console.error('Error during cleanup:', cleanupErr);
       }
-    } catch (finalErr) {
-      writeFileSync('./downlo', JSON.stringify(finalErr.message))
-      console.error('Fatal error in downloadFile:', finalErr);
-      return Buffer.from(`Download failed: ${finalErr.message}`);
+
+      // Return error message as buffer
+      return Buffer.from(`
+Unable to download file: ${blobRef.name || 'unknown'}
+=======================================
+
+The file could not be downloaded because:
+${err.message}
+
+Try again when more peers are online.
+`);
     }
   }
-
 
 
   // Enhanced getFiles method

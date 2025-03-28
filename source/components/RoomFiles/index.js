@@ -151,10 +151,6 @@ const RoomFiles = ({ onBack }) => {
         throw new Error('Failed to download file data');
       }
 
-      console.log('Received file data, type:', typeof fileData,
-        'is Buffer:', Buffer.isBuffer(fileData),
-        'length:', fileData.length || fileData.byteLength || '(unknown)');
-
       // Ensure fileData is a proper Buffer
       if (typeof fileData === 'string') {
         fileData = Buffer.from(fileData);
