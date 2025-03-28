@@ -434,7 +434,7 @@ class RoomBase extends ReadyResource {
 
   async getRoomInfo() {
     try {
-      return await this.base.view.get('@roombase/metadata', { id: this.roomId });
+      return await this.base.view.findOne('@roombase/metadata', {});
     } catch (e) {
       return null;
     }
@@ -452,20 +452,6 @@ class RoomBase extends ReadyResource {
     }
   }
 
-  /**
-   * Get paginated messages with various filtering options
-   *
-   * @param {Object} opts - Options for fetching messages
-   * @param {number} opts.limit - Maximum number of messages to return (default: 21)
-   * @param {number} opts.before - Return messages before this timestamp
-   * @param {number} opts.after - Return messages after this timestamp
-   * @param {string} opts.fromId - Start pagination from this message ID
-   * @param {string} opts.beforeId - Get messages before this ID
-   * @param {string} opts.sender - Filter messages by sender
-   * @param {boolean} opts.reverse - Reverse the sort order (default: true, newest first)
-   * @param {boolean} opts.includeMarker - Include pagination marker in response
-   * @returns {Object} - Messages and pagination marker
-   */
   getMessages(opts = {}) {
     if (!this.base || !this.base.view) {
       throw new Error("Error initializing corestore");
@@ -752,10 +738,7 @@ class RoomBase extends ReadyResource {
       return null;
     }
   }
-  // Add this to source/utils/roombase.js as a new method
 
-
-  // Enhanced getFiles method
   async getFiles(directory = '/', options = {}) {
     try {
       // Use promise-based stream processing
@@ -870,169 +853,10 @@ class RoomBase extends ReadyResource {
   }
 
   /**
-   * Check if a file is downloaded
-   * @param {string} path - File path to check
-   * @returns {boolean} - Whether the file is downloaded
-   */
-  async isDownloaded(path) {
-    try {
-      // Find the blob reference for this path
-      const fileName = path.includes('/') ? path.split('/').pop() : path;
-
-      const messages = await this.getMessages({ limit: 100 });
-      let blobRef = null;
-
-      // Find the message with this attachment
-      for (const msg of messages) {
-        if (msg.attachments && Array.isArray(msg.attachments)) {
-          const attachment = msg.attachments.find(att =>
-            att.name === fileName || att.path === path
-          );
-
-          if (attachment) {
-            blobRef = attachment;
-            break;
-          }
-        }
-      }
-
-      if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
-        return false;
-      }
-
-      // If it's our own blob, we always have it
-      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
-        return true;
-      }
-
-      // For other blobs, check if we can access it
-      try {
-        const remoteCore = this.store.get({ key: Buffer.from(blobRef.coreKey, 'hex') });
-        await remoteCore.ready();
-
-        // If we can get the blob core's info, consider it downloaded
-        const downloaded = remoteCore.length > 0;
-        await remoteCore.close();
-
-        return downloaded;
-      } catch (err) {
-        return false;
-      }
-    } catch (err) {
-      console.error(`Error checking if file is downloaded:`, err);
-      return false;
-    }
-  }
-
-  /**
-   * Create a directory (not used with Hyperblobs but kept for API compatibility)
-   */
-  async createDirectory(dirPath) {
-    // Hyperblobs doesn't support directories directly
-    // This is just a stub for backward compatibility
-    console.warn('createDirectory() is not supported with Hyperblobs - using flat file structure');
-    return false;
-  }
-
-  /**
-   * Compatibility function that doesn't do much with Hyperblobs
-   */
-  async navigateDirectory(path) {
-    // This is just a stub for backward compatibility
-    return await this.getFiles('/', { recursive: false });
-  }
-
-  async getFileInfo(filePath) {
-    try {
-      const fileName = path.basename(filePath);
-      const messages = await this.getMessages({ limit: 100 });
-
-      // Find a message with this attachment
-      for (const msg of messages) {
-        if (msg.attachments && Array.isArray(msg.attachments)) {
-          const attachment = msg.attachments.find(att =>
-            att.name === fileName || att.path === filePath
-          );
-
-          if (attachment) {
-            return {
-              ...attachment,
-              sender: msg.sender,
-              timestamp: attachment.timestamp || msg.timestamp
-            };
-          }
-        }
-      }
-
-      return null;
-    } catch (err) {
-      console.error(`Error getting file info:`, err);
-      return null;
-    }
-  }
-
-  /**
    * Check if a blob is available in a user's blob store
    * @param {Object} blobRef - The blob reference with coreKey and blobId
    * @returns {boolean} - Whether the blob is available
    */
-  async isBlobAvailable(blobRef) {
-    if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
-      return false;
-    }
-
-    try {
-      // If it's in our blob store, check directly
-      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
-        // For our own blobs, we can just check if the blobStore has the ID
-        return true; // We always have our own blobs
-      }
-
-      // For other users' blobs, we need to open their blob core
-      const ownerBlobCore = this.store.get({
-        key: Buffer.from(blobRef.coreKey, 'hex')
-      });
-
-      await ownerBlobCore.ready();
-
-      // We can consider a blob available if we can get the core
-      const available = ownerBlobCore.length > 0;
-
-      await ownerBlobCore.close();
-      return available;
-    } catch (err) {
-      console.error(`Error checking blob availability:`, err);
-      return false;
-    }
-  }
-
-  /**
-   * Get a list of all unique blob cores referenced in messages
-   * @returns {Array} - Array of blob core keys
-   */
-  async getBlobCores() {
-    try {
-      const messages = await this.getMessages({ limit: 100 });
-      const coreKeys = new Set();
-
-      // Collect all unique blob core keys
-      for (const msg of messages) {
-        if (msg.attachments && Array.isArray(msg.attachments)) {
-          for (const attachment of msg.attachments) {
-            if (attachment && attachment.coreKey) {
-              coreKeys.add(attachment.coreKey);
-            }
-          }
-        }
-      }
-
-      return Array.from(coreKeys);
-    } catch (err) {
-      console.error(`Error getting blob cores:`, err);
-      return [];
-    }
-  }
-
 
   async setBlobstore(opts) {
     this.blobStore = opts.blobStore;

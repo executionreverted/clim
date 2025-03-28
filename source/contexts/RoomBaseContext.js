@@ -952,7 +952,8 @@ export function RoomBaseProvider({ children }) {
         const { blobStore, blobCore } = await getBlobStore()
         // Use the static joinRoom method
         const room = await RoomBase.joinRoom(store, inviteCode, {
-          blobStore, blobCore
+          blobStore,
+          blobCore
         });
 
         await room.ready();
