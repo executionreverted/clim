@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto';
 import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 import Hyperblobs from 'hyperblobs';
+import Hypercore from 'hypercore';
 
 // Configuration for file paths
 const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
@@ -578,31 +579,25 @@ export function RoomBaseProvider({ children }) {
   }, []);
 
   const createBlobCore = async () => {
-    const blobsCore = new Corestore(BLOBS_DIR)
+    const blobsCore = new Hypercore(BLOBS_DIR)
     await blobsCore.ready()
 
-    // Ensure the core is fully initialized
-    const localCore = blobsCore.get({ name: 'blob-core' })
-    await localCore.ready()
-
     corestores.current.set('blobcore', blobsCore)
-    return { blobsCore, localCore }
+    return { blobsCore }
   }
 
   const getBlobStore = async () => {
     try {
       let blobCore = corestores.current.get('blobcore')
-      let localCore;
 
       if (!blobCore) {
         const result = await createBlobCore()
         blobCore = result.blobsCore
-        localCore = result.localCore
       }
 
       // Ensure blob store is always created with a ready core
       if (!blobStore.current) {
-        blobStore.current = new Hyperblobs(localCore || blobCore.get({ name: 'blob-core' }))
+        blobStore.current = new Hyperblobs(blobCore)
         await blobStore.current.ready()
       }
 

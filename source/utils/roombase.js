@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import { getEncoding } from './spec/hyperdispatch/messages.js';
 import { writeFileSync } from 'fs';
 import path from 'path';
+import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
 
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
@@ -384,7 +385,7 @@ class RoomBase extends ReadyResource {
     }
     const msg = {
       id: message.id || `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
-      content: message.content || '',
+      content: sanitizeTextForTerminal(message.content) || '',
       sender: message.sender || 'Unknown',
       timestamp: message.timestamp || Date.now(),
       system: !!message.system,
@@ -417,6 +418,8 @@ class RoomBase extends ReadyResource {
 
       return msg.id;
     } catch (err) {
+
+      writeFileSync('./sendmsg', JSON.stringify(e.message));
       console.error(`Error saving message with dispatch:`, err);
       this.emit('mistake', JSON.stringify(err.message));
     }
@@ -659,7 +662,7 @@ class RoomBase extends ReadyResource {
       }
 
       // Otherwise, we need to get the blob from the owner's store
-      const ownerBlobCore = this.store.get({
+      const ownerBlobCore = this.blobStore.get({
         key: Buffer.from(blobRef.coreKey, 'hex')
       });
 
