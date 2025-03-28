@@ -22,6 +22,7 @@
 		"blind-pairing": "^2.3.1",
 		"clipboardy": "^4.0.0",
 		"corestore": "^7.0.23",
+		"downloads-folder": "^3.0.3",
 		"filesize": "^10.1.6",
 		"hyperblobs": "^2.8.0",
 		"hypercore": "^11.0.48",

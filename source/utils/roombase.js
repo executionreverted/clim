@@ -14,7 +14,7 @@ import { getEncoding } from './spec/hyperdispatch/messages.js';
 import { writeFileSync } from 'fs';
 import path from 'path';
 import { sanitizeTextForTerminal } from '../components/FileExplorer/utils.js';
-
+import download from 'downloads-folder'; ()
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
     super();
@@ -624,7 +624,7 @@ class RoomBase extends ReadyResource {
       // 2. Calling with a blob reference object that has blobId and coreKey
 
       let blobRef;
-
+      const downloadsFolder = download()
       if (typeof filePath === 'string') {
         // Case 1: filePath is a string from old code - search messages for attachment
         const fileName = path.basename(filePath);
