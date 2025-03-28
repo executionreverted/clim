@@ -1,4 +1,4 @@
-// contexts/RoomBaseContext.js - Direct integration with RoomBase
+// contexts/RoomBaseContext.js - Updated for Hyperblobs
 import React, { useCallback, createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import fs, { writeFileSync } from 'fs';
 import path from 'path';
@@ -8,10 +8,9 @@ import Corestore from 'corestore';
 import RoomBase from '../utils/roombase.js';
 
 // Configuration for file paths
-const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters2');
+const CONFIG_DIR = path.join(os.homedir(), '.config/.hyperchatters');
 const ROOMS_DIR = path.join(CONFIG_DIR, 'rooms');
 const ROOMS_FILE = path.join(CONFIG_DIR, 'room-keys.json');
-const DRIVE_PATH = path.join(CONFIG_DIR, 'drives/')
 const IDENTITY_FILE = path.join(CONFIG_DIR, 'identity.json');
 
 // Create the context
@@ -29,7 +28,7 @@ const ACTIONS = {
   SET_PEERS: 'SET_PEERS',
   SET_CONNECTIONS: 'SET_CONNECTIONS',
   UPDATE_ROOM_MESSAGES: 'UPDATE_ROOM_MESSAGES',
-  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT', // New action type,
+  UPDATE_MESSAGE_COUNT: 'UPDATE_MESSAGE_COUNT',
   SET_ROOM_FILES: 'SET_ROOM_FILES',
   ADD_ROOM_FILE: 'ADD_ROOM_FILE',
   REMOVE_ROOM_FILE: 'REMOVE_ROOM_FILE',
@@ -235,166 +234,10 @@ export function RoomBaseProvider({ children }) {
   const roomInstances = useRef(new Map()); // Map roomId -> RoomBase instance
   const corestores = useRef(new Map()); // Map roomId -> Corestore instance
   const messageListeners = useRef(new Map()); // Map roomId -> function[] (for message event listeners)
-  const joinInProgress = useRef(false)
+  const joinInProgress = useRef(false);
   const seenMessageIds = useRef(new Map()); // Map roomId -> Set of seen message IDs
 
-
   const loadingRooms = useRef(new Set());
-  const fileWatchers = useRef(new Map())
-
-
-  // Simplified loadRoomFiles function for flat file structure
-  const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
-    if (!roomId) {
-      console.error("No roomId provided to loadRoomFiles");
-      return [];
-    }
-
-    // Prevent multiple concurrent loads
-    if (loadingRooms.current.has(roomId)) {
-      console.log(`Skip loading files for ${roomId} - already in progress`);
-      return [];
-    }
-
-    loadingRooms.current.add(roomId);
-
-    try {
-      const room = roomInstances.current.get(roomId);
-
-      if (!room) {
-        console.error(`No room instance found for ID ${roomId}`);
-        return [];
-      }
-
-      // NEW CODE: First try to sync drive if not already initialized
-      if (!room.drive) {
-        console.log(`Room ${roomId} has no drive initialized, attempting to sync`);
-
-        try {
-          // Try to sync drive with latest metadata
-          const syncSuccess = await room.syncDrive();
-
-          if (!syncSuccess) {
-            console.warn('Drive sync was not successful');
-
-            // If we're the room creator, we should try to create a drive
-            if (room.base.writable) {
-              console.log('We are room creator, attempting to initialize drive');
-              await room._initializeDrive();
-            } else {
-              console.warn('Not room creator, waiting for drive key from metadata');
-              // Start periodic sync to keep trying
-              room.startPeriodicDriveSync(15000); // Check every 15 seconds
-            }
-          }
-        } catch (syncErr) {
-          console.error(`Error syncing drive: ${syncErr.message}`);
-        }
-      }
-
-      // If drive is still not available, return empty list
-      if (!room.drive) {
-        console.warn("No drive available yet, returning empty file list");
-        return [];
-      }
-
-      // Rest of your existing loadRoomFiles code...
-      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
-
-      try {
-        console.log(`Loading files from flat structure for room ${roomId}`);
-        const files = await room.getFiles('/', { recursive: false });
-        console.log(`Found ${files.length} files`);
-
-        dispatch({
-          type: ACTIONS.SET_ROOM_FILES,
-          payload: { roomId, files }
-        });
-
-        dispatch({
-          type: ACTIONS.SET_CURRENT_DIRECTORY,
-          payload: { roomId, path: '/' }
-        });
-
-        return files;
-      } catch (err) {
-        console.error(`Error loading files for room ${roomId}:`, err);
-        return [];
-      } finally {
-        dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
-      }
-    } finally {
-      loadingRooms.current.delete(roomId);
-    }
-  }, []);
-  // Improved setupFileWatcher function that prevents infinite loops
-  const setupFileWatcher = useCallback((roomId) => {
-    const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return;
-
-    // Remove existing watcher if any
-    if (fileWatchers.current.has(roomId)) {
-      try {
-        const existingWatcher = fileWatchers.current.get(roomId);
-        existingWatcher.destroy().catch(console.error);
-        fileWatchers.current.delete(roomId);
-      } catch (err) {
-        console.error(`Error cleaning up existing watcher for room ${roomId}:`, err);
-      }
-    }
-
-    // Add debounce mechanism to prevent rapid updates
-    const lastUpdateTimes = new Map();
-    const DEBOUNCE_TIME = 5000; // 5 seconds debounce
-
-    try {
-      console.log(`Setting up file watcher for room ${roomId}`);
-      const watcher = room.watchFiles();
-      fileWatchers.current.set(roomId, watcher);
-
-      // Create a loading flag specific to this watcher to prevent concurrent loads
-      const isLoading = { value: false };
-
-      // Watch for changes and reload files with debounce
-      (async () => {
-        for await (const change of watcher) {
-          // Skip if already loading (prevents simultaneous file loads)
-          if (isLoading.value) {
-            console.log('Skipping file reload - already in progress');
-            continue;
-          }
-
-          const now = Date.now();
-          const lastUpdate = lastUpdateTimes.get(roomId) || 0;
-
-          // Debounce logic
-          if (now - lastUpdate > DEBOUNCE_TIME) {
-            console.log(`File change detected in room ${roomId}, reloading files...`);
-            isLoading.value = true;
-
-            try {
-              await loadRoomFiles(roomId);
-              lastUpdateTimes.set(roomId, Date.now());
-            } catch (err) {
-              console.error(`Error reloading files:`, err);
-            } finally {
-              isLoading.value = false;
-            }
-          } else {
-            console.log(`Skipping file reload (debounced) - last update was ${now - lastUpdate}ms ago`);
-          }
-        }
-      })().catch(err => {
-        console.error(`File watcher for room ${roomId} error:`, err);
-      });
-
-      return watcher;
-    } catch (err) {
-      console.error(`Error setting up file watcher for room ${roomId}:`, err);
-      return null;
-    }
-  }, [loadRoomFiles]);
-
 
   const isMessageDuplicate = (roomId, messageId) => {
     if (!roomId || !messageId) return false;
@@ -423,20 +266,14 @@ export function RoomBaseProvider({ children }) {
     return false;
   };
 
-
   const saveRoomsToFile = () => {
     try {
-      // Make sure we extract all necessary properties including driveKey
       const roomKeys = state.rooms.map(room => {
-        // Log each room to debug
-        console.log(`Saving room ${room.id} with driveKey: ${room.driveKey}`);
-
         return {
           id: room.id,
           name: room.name,
           key: room.key,
-          encryptionKey: room.encryptionKey,
-          driveKey: room.driveKey || null // Ensure driveKey is explicitly included
+          encryptionKey: room.encryptionKey
         };
       });
 
@@ -450,13 +287,14 @@ export function RoomBaseProvider({ children }) {
       console.error('Error saving room keys:', err);
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
     }
-  };  // Ensure config directory exists and load identity
+  };
+
+  // Ensure config directory exists and load identity
   useEffect(() => {
     try {
       // Ensure all required directories exist
       ensureDirectoryExists(CONFIG_DIR);
       ensureDirectoryExists(ROOMS_DIR);
-      ensureDirectoryExists(DRIVE_PATH);
 
       // Load identity
       const identity = loadOrCreateIdentity();
@@ -480,8 +318,7 @@ export function RoomBaseProvider({ children }) {
           }
         } catch (readErr) {
           console.error(`Error reading rooms file: ${readErr.message}`);
-          process.exit("1")
-          // fs.writeFileSync(ROOMS_FILE, JSON.stringify([]));
+          process.exit("1");
         }
       } else {
         console.log(`No rooms file found, creating empty one at ${ROOMS_FILE}`);
@@ -514,7 +351,6 @@ export function RoomBaseProvider({ children }) {
     };
   }, []);
 
-
   const setupMessageListener = (room, roomId) => {
     if (!room) return;
 
@@ -525,9 +361,9 @@ export function RoomBaseProvider({ children }) {
         console.error(`Error handling room update: ${err.message}`);
       }
     });
+
     // Listen for new messages
     room.on('new-message', (message) => {
-
       if (!message || !message.id) return;
       if (isMessageDuplicate(roomId, message.id)) {
         return; // Skip this message since it's a duplicate
@@ -546,20 +382,25 @@ export function RoomBaseProvider({ children }) {
     });
   };
 
-
+  // Updated to use Hyperblobs for file uploads
   const uploadFile = useCallback(async (roomId, file, customPath = null) => {
     const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) {
-      writeFileSync('./fileUpload', 'nol')
-      return false
-    }
+    if (!room) return false;
 
     dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
 
     try {
-      // Determine file path
-      const currentPath = state.currentDirectory[roomId] || '/';
-      const filePath = customPath || `${currentPath}/${file.name}`;
+      // Determine file path/name
+      let fileName;
+      if (customPath) {
+        fileName = path.basename(customPath);
+      } else if (file.name) {
+        fileName = file.name;
+      } else if (file.path) {
+        fileName = path.basename(file.path);
+      } else {
+        fileName = `file-${Date.now()}.bin`;
+      }
 
       // Read file data
       let fileData;
@@ -572,51 +413,61 @@ export function RoomBaseProvider({ children }) {
         // Node.js file path
         fileData = await fs.promises.readFile(file.path);
       } else {
-
-        writeFileSync('./fileUpload', 'nob')
-        return false
+        return false;
       }
 
-      // Upload to drive
-      const fileInfo = await room.uploadFile(fileData, filePath);
+      // Upload to blob store and get attachment reference
+      const attachment = await room.uploadFile(fileData, fileName);
 
-      if (fileInfo) {
-        // Send a message about the file sharing
+      if (attachment) {
+        // Send a message about the file sharing with the attachment reference
         await room.sendMessage({
           id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
-          content: `📄 Shared file: ${fileInfo.name} (${fileInfo.size} bytes)`,
+          content: `📄 Shared file: ${attachment.name} (${attachment.size} bytes)`,
           sender: state.identity ? state.identity.username : 'System',
           timestamp: Date.now(),
-          fileReference: fileInfo
+          attachments: [attachment]
         });
 
-        // Reload files to update the list
-        await loadRoomFiles(roomId);
+        // Add file to our state directly for immediate UI update
+        dispatch({
+          type: ACTIONS.ADD_ROOM_FILE,
+          payload: {
+            roomId,
+            file: {
+              ...attachment,
+              sender: state.identity ? state.identity.username : 'System',
+              isDirectory: false
+            }
+          }
+        });
+
+        // Load all files to update the state
+        loadRoomFiles(roomId);
+        return true;
       }
 
-      return !!fileInfo;
+      return false;
     } catch (err) {
-      writeFileSync('./uploadErr', JSON.stringify(err.message))
       console.error(`Error uploading file to room ${roomId}:`, err);
       return false;
     } finally {
       dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
     }
-  }, [state.currentDirectory, state.identity]);
+  }, [state.identity]);
 
-  const downloadFile = useCallback(async (roomId, path, saveAs = null) => {
+  // Updated to use Hyperblobs for file downloads
+  const downloadFile = useCallback(async (roomId, filePathOrRef, saveAs = null) => {
     const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return null;
+    if (!room) return null;
 
     try {
-      // Get file from drive
-      const data = await room.downloadFile(path);
-
-      if (!data) return null;
+      // Download the file using roombase's downloadFile
+      const data = await room.downloadFile(filePathOrRef);
 
       // If in Node.js environment and saveAs is provided, save to disk
       if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-        if (saveAs) {
+        if (saveAs && data) {
           await fs.promises.writeFile(saveAs, data);
         }
       }
@@ -628,10 +479,61 @@ export function RoomBaseProvider({ children }) {
     }
   }, []);
 
+  // Updated to use blob references in messages instead of a drive
+  const loadRoomFiles = useCallback(async (roomId, directory = '/') => {
+    if (!roomId) {
+      console.error("No roomId provided to loadRoomFiles");
+      return [];
+    }
 
+    // Prevent multiple concurrent loads
+    if (loadingRooms.current.has(roomId)) {
+      console.log(`Skip loading files for ${roomId} - already in progress`);
+      return [];
+    }
+
+    loadingRooms.current.add(roomId);
+
+    try {
+      const room = roomInstances.current.get(roomId);
+
+      if (!room) {
+        console.error(`No room instance found for ID ${roomId}`);
+        return [];
+      }
+
+      dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: true });
+
+      try {
+        // Use the flat structure from getFiles
+        const files = await room.getFiles('/', { recursive: false });
+
+        dispatch({
+          type: ACTIONS.SET_ROOM_FILES,
+          payload: { roomId, files }
+        });
+
+        dispatch({
+          type: ACTIONS.SET_CURRENT_DIRECTORY,
+          payload: { roomId, path: '/' }
+        });
+
+        return files;
+      } catch (err) {
+        console.error(`Error loading files for room ${roomId}:`, err);
+        return [];
+      } finally {
+        dispatch({ type: ACTIONS.SET_FILE_LOADING, payload: false });
+      }
+    } finally {
+      loadingRooms.current.delete(roomId);
+    }
+  }, []);
+
+  // Deleted file with blob references
   const deleteFile = useCallback(async (roomId, path) => {
     const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return false;
+    if (!room) return false;
 
     try {
       const success = await room.deleteFile(path);
@@ -652,61 +554,24 @@ export function RoomBaseProvider({ children }) {
       console.error(`Error deleting file from room ${roomId}:`, err);
       return false;
     }
-  }, []);
+  }, [loadRoomFiles]);
 
-
+  // This is just a stub since Hyperblobs doesn't use directories
   const createDirectory = useCallback(async (roomId, path) => {
-    const room = roomInstances.current.get(roomId);
-    if (!room || !room.drive) return false;
-
-    try {
-      const success = await room.createDirectory(path);
-
-      if (success) {
-        // Reload files to update the list
-        await loadRoomFiles(roomId);
-      }
-
-      return success;
-    } catch (err) {
-      console.error(`Error creating directory in room ${roomId}:`, err);
-      return false;
-    }
+    console.warn("createDirectory is not supported with Hyperblobs - using flat file structure");
+    return false;
   }, []);
 
-  // Navigate to a different directory within a room
+  // Just load all files since we use a flat structure now
   const navigateDirectory = useCallback((roomId, path) => {
     dispatch({
       type: ACTIONS.SET_CURRENT_DIRECTORY,
       payload: { roomId, path }
     });
 
-    // Reload files from the new path
-    return loadRoomFiles(roomId, path);
-  }, []);
-
-  useEffect(() => {
-    // Set up file watchers for existing rooms
-    for (const [roomId, room] of roomInstances.current.entries()) {
-      if (room.drive && !fileWatchers.current.has(roomId)) {
-        setupFileWatcher(roomId);
-      }
-    }
-
-    // Clean up file watchers when component unmounts
-    return () => {
-      for (const [roomId, watcher] of fileWatchers.current.entries()) {
-        try {
-          watcher.destroy();
-        } catch (err) {
-          console.error(`Error destroying file watcher for room ${roomId}:`, err);
-        }
-      }
-      fileWatchers.current.clear();
-    };
-  }, [setupFileWatcher]);
-
-
+    // Just reload all files
+    return loadRoomFiles(roomId);
+  }, [loadRoomFiles]);
 
   const initializeRooms = async (roomKeys) => {
     const roomsWithMessages = [];
@@ -714,7 +579,7 @@ export function RoomBaseProvider({ children }) {
     for (const roomKey of roomKeys) {
       try {
         if (corestores.current.get(roomKey.id)) {
-          continue
+          continue;
         }
         // Create a unique corestore for each room
         const roomStorePath = path.join(ROOMS_DIR, roomKey.id);
@@ -724,17 +589,12 @@ export function RoomBaseProvider({ children }) {
         await store.ready();
         corestores.current.set(roomKey.id, store);
 
-        const driveStorePath = path.join(DRIVE_PATH, roomKey.id + '_DRIVE');
-        const driveStore = new Corestore(driveStorePath);
-
-        corestores.current.set(roomKey.id + '_DRIVE', driveStore)
         // Create RoomBase instance with the room-specific corestore
         const room = new RoomBase(store, {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           roomId: roomKey.id,
-          roomName: roomKey.name,
-          driveStore: driveStore,
+          roomName: roomKey.name
         });
 
         await room.ready();
@@ -743,10 +603,11 @@ export function RoomBaseProvider({ children }) {
         // Set up message listener
         setupMessageListener(room, roomKey.id);
         try {
-          await updateMessageCount(roomKey.id)
+          await updateMessageCount(roomKey.id);
         } catch (countErr) {
           console.error(`Error getting message count for room ${roomKey.id}:`, countErr);
         }
+
         // Get messages using IndexStream properly
         let messages = [];
         try {
@@ -788,8 +649,6 @@ export function RoomBaseProvider({ children }) {
             }
           });
         } catch (msgErr) {
-
-          writeFileSync('./joinerr2', JSON.stringify(msgErr.message))
           console.error(`Error retrieving messages for room ${roomKey.id}:`, msgErr);
         }
 
@@ -800,15 +659,18 @@ export function RoomBaseProvider({ children }) {
           key: roomKey.key,
           encryptionKey: roomKey.encryptionKey,
           messages: messages || [],
-          driveKey: roomKey.driveKey,
           status: 'connected'
         });
 
         // Initialize peer count
         updatePeerInfo(roomKey.id);
 
+        // Load initial files
+        loadRoomFiles(roomKey.id).catch(err => {
+          console.error(`Error loading initial files for room ${roomKey.id}:`, err);
+        });
+
       } catch (err) {
-        writeFileSync('./joinerr', JSON.stringify(err.message))
         roomsWithMessages.push({
           id: roomKey.id,
           name: roomKey.name,
@@ -876,35 +738,13 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
-
   // Save rooms to file when they change
   useEffect(() => {
     // Only save if we have rooms
     if (state.rooms.length !== 0) {
-      try {
-        const roomKeys = state.rooms.map(room => ({
-          id: room.id,
-          name: room.name,
-          key: room.key,
-          encryptionKey: room.encryptionKey,
-          driveKey: room.driveKey
-        }));
-
-        // Ensure directory exists
-        if (!fs.existsSync(path.dirname(ROOMS_FILE))) {
-          fs.mkdirSync(path.dirname(ROOMS_FILE), { recursive: true });
-        }
-
-        // Save rooms to file
-        fs.writeFileSync(ROOMS_FILE, JSON.stringify(roomKeys, null, 2));
-        console.log(`Saved ${roomKeys.length} rooms to ${ROOMS_FILE}`);
-      } catch (err) {
-        console.error('Error saving room keys:', err);
-        dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to save room keys: ${err.message}` });
-      }
+      saveRoomsToFile();
     }
-  }, [state.rooms]);  // Function to create a new room
-
+  }, [state.rooms]);
 
   const createRoom = async (name) => {
     if (!name || name.trim() === '') {
@@ -923,28 +763,20 @@ export function RoomBaseProvider({ children }) {
       const store = new Corestore(roomStorePath);
       await store.ready();
 
-      const driveStorePath = path.join(DRIVE_PATH, roomId + '_DRIVE');
-      const driveStore = new Corestore(driveStorePath);
-      await driveStore.ready();
-      corestores.current.set(roomId + '_STORE', driveStore);
-
       // Create RoomBase instance with the room-specific corestore
       const room = new RoomBase(store, {
         roomId,
-        roomName,
-        driveStore
+        roomName
       });
 
       await room.ready();
 
-      await room._initializeDrive();
       // Get room key information
       const roomKey = {
         id: roomId,
         name: roomName,
         key: room.key.toString('hex'),
-        encryptionKey: room.encryptionKey.toString('hex'),
-        driveKey: room.driveKey
+        encryptionKey: room.encryptionKey.toString('hex')
       };
 
       // Store the room instance
@@ -957,7 +789,6 @@ export function RoomBaseProvider({ children }) {
         name: roomName,
         key: roomKey.key,
         encryptionKey: roomKey.encryptionKey,
-        driveKey: room.driveKey,
         messages: [],
         status: 'connected'
       };
@@ -970,7 +801,6 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
-  // Function to join a room by invite code
   // Function to join a room by invite code with better resource management
   const joinRoom = async (inviteCode) => {
     if (joinInProgress.current) return;
@@ -1001,20 +831,14 @@ export function RoomBaseProvider({ children }) {
         store = new Corestore(roomStorePath);
         await store.ready();
 
-        const driveStorePath = path.join(DRIVE_PATH, roomId + '_DRIVE');
-        const driveStore = new Corestore(driveStorePath + '/');
-        await driveStore.ready();
-
-
-        // Use the static joinRoom method to get drive key properly
-        const room = await RoomBase.joinRoom(store, inviteCode, { driveStore });
+        // Use the static joinRoom method
+        const room = await RoomBase.joinRoom(store, inviteCode);
         await room.ready();
 
         // Only now store the corestore after successful pairing
         corestores.current.set(roomId, store);
 
-        corestores.current.set(roomId + '_STORE', driveStore);
-        // Get room info including drive key
+        // Get room info
         const roomInfo = await room.getRoomInfo();
         const roomName = roomInfo?.name || 'Joined Room';
 
@@ -1025,7 +849,6 @@ export function RoomBaseProvider({ children }) {
         // Get messages
         let messages = [];
         try {
-
           await updateMessageCount(roomId);
 
           try {
@@ -1062,23 +885,24 @@ export function RoomBaseProvider({ children }) {
           console.error('Failed to retrieve messages:', msgErr);
         }
 
-        // Add to state with drive key
+        // Add to state
         const newRoom = {
           id: roomId,
           name: roomName,
           key: room.key?.toString('hex'),
           encryptionKey: room.encryptionKey?.toString('hex'),
           messages: messages,
-          status: 'connected',
-          driveKey: room.driveKey  // Include drive key
+          status: 'connected'
         };
 
         // Update state
         dispatch({ type: ACTIONS.ADD_ROOM, payload: newRoom });
         dispatch({ type: ACTIONS.SET_ACTIVE_ROOM, payload: roomId });
 
-        // Setup file watcher and load initial files
-        setupFileWatcher(roomId);
+        // Load initial files
+        loadRoomFiles(roomId).catch(err => {
+          console.error(`Error loading initial files:`, err);
+        });
 
         joinInProgress.current = false;
         return roomId;
@@ -1101,8 +925,6 @@ export function RoomBaseProvider({ children }) {
       return null;
     }
   };
-
-
 
   // Function to leave a room
   const leaveRoom = async (roomId) => {
@@ -1138,7 +960,7 @@ export function RoomBaseProvider({ children }) {
       }
 
       dispatch({ type: ACTIONS.REMOVE_ROOM, payload: roomId });
-      saveRoomsToFile()
+      saveRoomsToFile();
       return true;
     } catch (err) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: `Failed to leave room: ${err.message}` });
@@ -1146,10 +968,7 @@ export function RoomBaseProvider({ children }) {
     }
   };
 
-
-  // Simpler version of the loadMoreMessages function
   // Add this debugging version of loadMoreMessages to RoomBaseContext.js
-
   const loadMoreMessages = async (roomId, options = {}) => {
     if (!roomId) return false;
 
@@ -1227,12 +1046,9 @@ export function RoomBaseProvider({ children }) {
         return false;
       }
 
-      // Add console logging to debug message IDs
-
       // Filter out any messages that might be duplicates (by ID)
       const currentMessageIds = new Set(currentMessages.map(msg => msg.id));
       const uniqueOlderMessages = olderMessages.filter(msg => !currentMessageIds.has(msg.id));
-
 
       if (uniqueOlderMessages.length === 0) {
         return false; // No new unique messages found
@@ -1258,7 +1074,9 @@ export function RoomBaseProvider({ children }) {
       console.error(`Error loading more messages:`, err);
       return false;
     }
-  };  // Function to send a message
+  };
+
+  // Function to send a message
   const sendMessage = async (roomId, content, isSystemMessage = false) => {
     if (!content || content.trim() === '' || !state.identity) return false;
 
@@ -1282,14 +1100,12 @@ export function RoomBaseProvider({ children }) {
             roomId: room.roomId,
             message: message,
           }
-        })
-        return true
+        });
+        return true;
       }
+
       // Send through RoomBase
       await room.sendMessage(message);
-
-      // Add to state (this will likely be duplicated by the message listener,
-      // but ensuring immediate feedback is worth it)
 
       return true;
     } catch (err) {
@@ -1305,7 +1121,6 @@ export function RoomBaseProvider({ children }) {
 
     try {
       const inviteCode = await room.createInvite();
-
       return inviteCode;
     } catch (err) {
       console.error(`Error creating invite for room ${roomId}:`, err);
@@ -1389,7 +1204,6 @@ export function RoomBaseProvider({ children }) {
     deleteFile,
     createDirectory,
     navigateDirectory
-
   };
 
   return (

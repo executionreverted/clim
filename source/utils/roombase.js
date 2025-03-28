@@ -3,49 +3,49 @@ import Autobase from 'autobase';
 import BlindPairing from 'blind-pairing';
 import HyperDB from 'hyperdb';
 import Hyperswarm from 'hyperswarm';
-import Hyperdrive from 'hyperdrive';
+import Hyperblobs from 'hyperblobs';
 import ReadyResource from 'ready-resource';
 import z32 from 'z32';
 import b4a from 'b4a';
-import { Router, dispatch } from './spec/hyperdispatch/index.js'
+import { Router, dispatch } from './spec/hyperdispatch/index.js';
 import db from './spec/db/index.js';
 import crypto from 'crypto';
-import { getEncoding } from './spec/hyperdispatch/messages.js'
+import { getEncoding } from './spec/hyperdispatch/messages.js';
 import { writeFileSync } from 'fs';
+import path from 'path';
 
 class RoomBasePairer extends ReadyResource {
   constructor(store, invite, opts = {}) {
-    super()
-    this.store = store
-    this.invite = invite
-    this.swarm = null
-    this.pairing = null
-    this.candidate = null
-    this.bootstrap = opts.bootstrap || null
-    this.onresolve = null
-    this.onreject = null
-    this.room = null
-    this.driveStore = opts.driveStore
-    this.ready().catch(noop)
+    super();
+    this.store = store;
+    this.invite = invite;
+    this.swarm = null;
+    this.pairing = null;
+    this.candidate = null;
+    this.bootstrap = opts.bootstrap || null;
+    this.onresolve = null;
+    this.onreject = null;
+    this.room = null;
+    this.ready().catch(noop);
   }
 
   async _open() {
-    await this.store.ready()
+    await this.store.ready();
     this.swarm = new Hyperswarm({
       keyPair: await this.store.createKeyPair('hyperswarm'),
       bootstrap: this.bootstrap
-    })
+    });
 
-    const store = this.store
+    const store = this.store;
     this.swarm.on('connection', (connection, peerInfo) => {
-      store.replicate(connection)
-    })
+      store.replicate(connection);
+    });
 
-    this.pairing = new BlindPairing(this.swarm)
-    const core = Autobase.getLocalCore(this.store)
-    await core.ready()
-    const key = core.key
-    await core.close()
+    this.pairing = new BlindPairing(this.swarm);
+    const core = Autobase.getLocalCore(this.store);
+    await core.ready();
+    const key = core.key;
+    await core.close();
 
     this.candidate = this.pairing.addCandidate({
       invite: z32.decode(this.invite),
@@ -56,141 +56,125 @@ class RoomBasePairer extends ReadyResource {
             swarm: this.swarm,
             key: result.key,
             encryptionKey: result.encryptionKey,
-            bootstrap: this.bootstrap,
-            driveStore: this.driveStore
-          })
+            bootstrap: this.bootstrap
+          });
         }
-        this.swarm = null
-        this.store = null
-        if (this.onresolve) this._whenWritable()
-        this.candidate.close().catch(noop)
+        this.swarm = null;
+        this.store = null;
+        if (this.onresolve) this._whenWritable();
+        this.candidate.close().catch(noop);
       }
-    })
+    });
   }
 
   _whenWritable() {
-    if (this.room.base.writable) return
+    if (this.room.base.writable) return;
     const check = () => {
       if (this.room.base.writable) {
-        this.room.base.off('update', check)
-        this.onresolve(this.room)
+        this.room.base.off('update', check);
+        this.onresolve(this.room);
       }
-    }
-    this.room.base.on('update', check)
+    };
+    this.room.base.on('update', check);
   }
 
   async _close() {
     if (this.candidate !== null) {
-      await this.candidate.close()
+      await this.candidate.close();
     }
 
     if (this.swarm !== null) {
-      await this.swarm.destroy()
+      await this.swarm.destroy();
     }
 
     if (this.store !== null) {
-      await this.store.close()
+      await this.store.close();
     }
 
-
     if (this.onreject) {
-      this.onreject(new Error('Pairing closed'))
+      this.onreject(new Error('Pairing closed'));
     } else if (this.room) {
-      await this.room.close()
+      await this.room.close();
     }
   }
 
   finished() {
     return new Promise((resolve, reject) => {
-      this.onresolve = resolve
-      this.onreject = reject
-    })
+      this.onresolve = resolve;
+      this.onreject = reject;
+    });
   }
 }
 
 /**
- * Main RoomBase class for a single room with p2p messaging
+ * Main RoomBase class for a single room with p2p messaging and file sharing
  */
 class RoomBase extends ReadyResource {
   constructor(corestore, opts = {}) {
-    super()
-    this.router = new Router()
-    this.store = corestore
-    this.swarm = opts.swarm || null
-    this.base = null
-    this.bootstrap = opts.bootstrap || null
-    this.member = null
-    this.pairing = null
-    this.replicate = opts.replicate !== false
+    super();
+    this.router = new Router();
+    this.store = corestore;
+    this.swarm = opts.swarm || null;
+    this.base = null;
+    this.bootstrap = opts.bootstrap || null;
+    this.member = null;
+    this.pairing = null;
+    this.replicate = opts.replicate !== false;
 
     // Room properties
-    this.roomId = opts.roomId || crypto.randomUUID()
-    this.roomName = opts.roomName || 'Unnamed Room'
-    this.messageListeners = []
+    this.roomId = opts.roomId || crypto.randomUUID();
+    this.roomName = opts.roomName || 'Unnamed Room';
+    this.messageListeners = [];
 
-    // Add Hyperdrive for file sharing
-    this.drive = null;
-    this.driveKey = null;
-    this.driveWatcher = null;
-    this.driveStore = opts.driveStore;
+    // Hyperblobs storage setup
+    this.blobStore = null;
+    this.blobCore = null;
+    this.attachmentWatcher = null;
+
     // Register command handlers
-    this._registerHandlers()
+    this._registerHandlers();
 
-    this._boot(opts)
-    this.ready().catch(noop)
+    this._boot(opts);
+    this.ready().catch(noop);
   }
 
   _registerHandlers() {
     // Writer management commands
     this.router.add('@roombase/remove-writer', async (data, context) => {
-      await context.base.removeWriter(data.key)
-    })
+      await context.base.removeWriter(data.key);
+    });
 
     this.router.add('@roombase/add-writer', async (data, context) => {
-      await context.base.addWriter(data.key)
-    })
+      await context.base.addWriter(data.key);
+    });
 
     this.router.add('@roombase/add-invite', async (data, context) => {
-      await context.view.insert('@roombase/invite', data)
-    })
+      await context.view.insert('@roombase/invite', data);
+    });
 
     // Message commands
     this.router.add('@roombase/send-message', async (data, context) => {
-      await context.view.insert('@roombase/messages', data)
-    })
+      await context.view.insert('@roombase/messages', data);
+    });
 
     this.router.add('@roombase/delete-message', async (data, context) => {
-      await context.view.delete('@roombase/messages', { id: data.id })
-    })
+      await context.view.delete('@roombase/messages', { id: data.id });
+    });
+
     this.router.add('@roombase/set-metadata', async (data, context) => {
       // First try deleting existing metadata
       try {
-        await context.view.delete('@roombase/metadata', { id: data.id })
+        await context.view.delete('@roombase/metadata', { id: data.id });
       } catch (e) {
         // Ignore errors if no existing record
       }
       // Then insert the new metadata
-      await context.view.insert('@roombase/metadata', data)
-    })
-
-
-    this.router.add('@roombase/update-drive-metadata', async (data, context) => {
-      try {
-        await context.view.delete('@roombase/drive-metadata', { id: data.id });
-      } catch (e) {
-        // Ignore errors if no existing record
-      }
-      await context.view.insert('@roombase/drive-metadata', data);
-    });
-
-
-    this.router.add('@roombase/set-drive-key', async (data, context) => {
-      await context.view.insert('@roombase/drive-metadata', data);
+      await context.view.insert('@roombase/metadata', data);
     });
   }
 
   _boot(opts = {}) {
-    const { encryptionKey, key } = opts
+    const { encryptionKey, key } = opts;
 
     this.base = new Autobase(this.store, key, {
       encrypt: true,
@@ -199,16 +183,16 @@ class RoomBase extends ReadyResource {
         return HyperDB.bee(store.get('view'), db, {
           extension: false,
           autoUpdate: true
-        })
+        });
       },
       apply: this._apply.bind(this)
-    })
+    });
 
     this.base.on('update', () => {
       if (!this.base._interrupting) {
-        this.emit('update')
+        this.emit('update');
       }
-    })
+    });
   }
 
   async _apply(nodes, view, base) {
@@ -246,464 +230,189 @@ class RoomBase extends ReadyResource {
     await view.flush();
   }
 
-
   async _open() {
-    await this.base.ready()
+    await this.base.ready();
 
-    if (this.replicate) await this._replicate()
+    // Initialize the blob store
+    await this._initializeBlobStore();
+
+    if (this.replicate) await this._replicate();
 
     // Save room info if not already stored
-    await this._initializeRoom()
+    await this._initializeRoom();
   }
 
   async _close() {
     if (this.swarm) {
-      await this.member.close()
-      await this.pairing.close()
-      await this.swarm.destroy()
-
-      if (this.drive !== null) {
-        await this.drive.close()
-        await this.driveStore.close()
-      }
+      if (this.member) await this.member.close();
+      if (this.pairing) await this.pairing.close();
+      await this.swarm.destroy();
     }
 
-    await this.base.close()
+    // Close blob store resources
+    if (this.blobCore) {
+      await this.blobCore.close();
+    }
+
+    await this.base.close();
   }
 
-  // Improved implementation for the _initializeDrive method in RoomBase class
-  // Simplified _initializeDrive method
-  async _initializeDrive() {
+  async _initializeBlobStore() {
     try {
-      console.log('Initializing drive...');
+      console.log('Initializing blob store...');
 
-      // Make sure we have a drive store
-      if (!this.driveStore) {
-        console.error('No drive store provided');
-        return false;
+      // Create a core for blob storage
+      this.blobCore = this.store.get({ name: 'blobs' });
+      await this.blobCore.ready();
+
+      // Create the hyperblobs instance
+      this.blobStore = new Hyperblobs(this.blobCore);
+
+      console.log(`Blob store initialized with key: ${this.blobCore.key.toString('hex')}`);
+
+      // Set up blob core replication if swarm exists
+      if (this.swarm) {
+        this.swarm.join(this.blobCore.discoveryKey, {
+          server: true,
+          client: true
+        });
+
+        console.log('Blob store joined to swarm for replication');
       }
 
-      await this.driveStore.ready();
-
-      // Always try to get drive key from database first
-      let driveKeyFromDb = null;
-
-      try {
-        // First check room metadata (most reliable source)
-        const roomInfo = await this.getRoomInfo();
-        if (roomInfo && roomInfo.driveKey) {
-          driveKeyFromDb = roomInfo.driveKey;
-          console.log(`Found drive key in room metadata: ${driveKeyFromDb}`);
-        } else {
-          // Fall back to dedicated drive metadata
-          const driveMetadata = await this._getDriveMetadata();
-          if (driveMetadata && driveMetadata.driveKey) {
-            driveKeyFromDb = driveMetadata.driveKey;
-            console.log(`Found drive key in drive metadata: ${driveKeyFromDb}`);
-          }
-        }
-      } catch (err) {
-        console.warn('Error fetching metadata:', err);
-      }
-
-      // Decide whether to create a new drive or use existing key
-      if (driveKeyFromDb) {
-        // Use the drive key from database
-        this.driveKey = driveKeyFromDb;
-        console.log(`Using existing drive key from database: ${this.driveKey}`);
-      } else if (this.base.writable && !this.driveKey) {
-        // If we're the room creator and no drive key exists, create a new drive
-        console.log('No drive key found in database and we are room creator - creating new drive');
-        this.drive = new Hyperdrive(this.driveStore);
-        await this.drive.ready();
-
-        // Store the new drive key
-        this.driveKey = this.drive.key.toString('hex');
-        console.log(`Created new drive with key: ${this.driveKey}`);
-
-        // Store the drive key in metadata
-        await this._storeDriveKey();
-
-        // Drive is already initialized, return success
-        await this._setupDriveReplication();
-        return true;
-      } else if (!this.driveKey) {
-        // If we're not the room creator and no drive key is found, wait for it
-        console.log('No drive key found and not room creator - cannot initialize drive yet');
-        console.log('Will retry after metadata sync');
-
-        // Force an update to get latest metadata
-        try {
-          await this.base.update({ wait: true });
-
-          // Check again for drive key
-          const roomInfo = await this.getRoomInfo();
-          if (roomInfo && roomInfo.driveKey) {
-            this.driveKey = roomInfo.driveKey;
-            console.log(`Found drive key after update: ${this.driveKey}`);
-          } else {
-            console.error('Still no drive key found after metadata update');
-            return false;
-          }
-        } catch (updateErr) {
-          console.error('Error updating metadata:', updateErr);
-          return false;
-        }
-      }
-
-      // Now initialize the drive with the key (either from DB or newly created)
-      try {
-        if (this.driveKey) {
-          // Convert from hex string to Buffer if needed
-          const driveKeyBuffer = typeof this.driveKey === 'string'
-            ? Buffer.from(this.driveKey, 'hex')
-            : this.driveKey;
-
-          console.log(`Opening drive with key: ${this.driveKey}`);
-          this.drive = new Hyperdrive(this.driveStore, driveKeyBuffer);
-          await this.drive.ready();
-          console.log(`Drive ready, key: ${this.drive.key.toString('hex')}`);
-
-          // Verification step
-          const actualKey = this.drive.key.toString('hex');
-          if (actualKey !== this.driveKey) {
-            console.error(`Drive key mismatch! Expected: ${this.driveKey}, Got: ${actualKey}`);
-
-            // Close the drive and try again with correct key
-            await this.drive.close();
-
-            // This is a critical error - drive key should match what we requested
-            throw new Error('Drive key mismatch');
-          }
-
-          // Setup drive replication
-          await this._setupDriveReplication();
-          return true;
-        } else {
-          console.error('No drive key available after all attempts');
-          return false;
-        }
-      } catch (err) {
-        console.error('Error initializing drive:', err);
-        this.drive = null;
-        return false;
-      }
+      return true;
     } catch (err) {
-      console.error('Error in _initializeDrive:', err);
-      this.drive = null;
+      console.error('Error initializing blob store:', err);
       return false;
-    }
-  }
-
-
-  async _setupDriveReplication() {
-    if (!this.drive || !this.swarm || !this.driveKey) return;
-
-    try {
-
-      this.driveSwarm = new Hyperswarm()
-
-      this.driveSwarm.on('connection', (socket) => this.drive.replicate(socket))
-      // Get the drive's discovery key
-      const driveDiscoveryKey = this.drive.discoveryKey;
-      // Join the swarm with the drive's discovery key
-      this.driveSwarm.join(driveDiscoveryKey, {
-        server: true,
-        client: true
-      });
-
-      // Set up connection handler for drive replication
-      this.driveSwarm.on('connection', (connection) => {
-        // Replicate the drive with this connection
-        this.drive.replicate(connection);
-
-        // Listen for connection close to handle cleanup
-        connection.on('close', () => {
-          // Handle connection close
-          console.log('Drive replication connection closed');
-        });
-
-        // Handle connection errors
-        connection.on('error', (err) => {
-          console.error('Drive replication connection error:', err);
-        });
-      });
-      this.updateDrive()
-      console.log('Drive replication set up successfully');
-    } catch (err) {
-      console.error('Error setting up drive replication:', err);
     }
   }
 
   async _initializeRoom() {
-    // Use a constant ID "metadata" instead of this.roomId for storing room info
-    const METADATA_ID = "metadata";
-
-    const existingRoom = await this.getRoomInfo()
+    const existingRoom = await this.getRoomInfo();
     if (!existingRoom) {
-      // Store basic room info with constant ID
-      const roomMetadata = {
-        id: METADATA_ID, // Use constant ID for metadata
-        originalRoomId: this.roomId, // Store original ID as a reference
+      // Store basic room info
+      const roomData = {
+        id: this.roomId,
         name: this.roomName,
         createdAt: Date.now(),
-        messageCount: 0,
-        driveKey: this.driveKey
-      }
+        messageCount: 0
+      };
+
       try {
-        const dispatchData = dispatch('@roombase/set-metadata', roomMetadata);
-        await this.base.append(dispatchData)
+        const dispatchData = dispatch('@roombase/set-metadata', roomData);
+        await this.base.append(dispatchData);
       } catch (e) {
-        console.error('Error initializing room metadata:', e);
+        writeFileSync('./init', JSON.stringify(e.message));
       }
     } else {
       // Update local properties from stored values
-      // Keep using original roomId for local reference
-      this.roomName = existingRoom.name
-
-      if (existingRoom.driveKey && !this.driveKey) {
-        this.driveKey = existingRoom.driveKey;
-        await this._initializeDrive();
-      }
-
-      if (!existingRoom.driveKey && this.driveKey) {
-        try {
-          const updatedInfo = {
-            ...existingRoom,
-            driveKey: this.driveKey
-          };
-
-          const dispatchData = dispatch('@roombase/set-metadata', updatedInfo);
-          await this.base.append(dispatchData);
-        } catch (e) {
-          console.error('Error updating room with drive key:', e);
-        }
-      }
+      this.roomId = existingRoom.id;
+      this.roomName = existingRoom.name;
     }
   }
+
   get writerKey() {
-    return this.base.local.key
+    return this.base.local.key;
   }
 
   get key() {
-    return this.base.key
+    return this.base.key;
   }
 
   get discoveryKey() {
-    return this.base.discoveryKey
+    return this.base.discoveryKey;
   }
 
   get encryptionKey() {
-    return this.base.encryptionKey
+    return this.base.encryptionKey;
   }
 
   get writable() {
-    return this.base.writable
+    return this.base.writable;
   }
-
-  async _storeDriveKey() {
-    if (!this.driveKey) {
-      console.error('Cannot store null drive key');
-      return false;
-    }
-
-    try {
-      console.log(`Storing drive key ${this.driveKey} for room ${this.roomId}`);
-      const METADATA_ID = "metadata";
-      let success = false;
-
-      // 1. Store in room metadata (primary location) with constant ID
-      try {
-        // Get existing room info
-        const room = await this.getRoomInfo();
-
-        if (room) {
-          // Update existing room info with drive key
-          const updatedRoom = {
-            ...room,
-            driveKey: this.driveKey
-          };
-
-          console.log('Updating room metadata with drive key');
-          const metadataDispatch = dispatch('@roombase/set-metadata', updatedRoom);
-          await this.base.append(metadataDispatch);
-          success = true;
-        } else {
-          // Create new room metadata with constant ID
-          const newRoom = {
-            id: METADATA_ID,
-            originalRoomId: this.roomId,
-            name: this.roomName || 'Unnamed Room',
-            createdAt: Date.now(),
-            messageCount: 0,
-            driveKey: this.driveKey
-          };
-
-          console.log('Creating new room metadata with drive key');
-          const metadataDispatch = dispatch('@roombase/set-metadata', newRoom);
-          await this.base.append(metadataDispatch);
-          success = true;
-        }
-
-        // Force an immediate ack to help it spread faster
-        try {
-          await this.base.ack();
-        } catch (ackErr) {
-          console.warn('Error during ack:', ackErr);
-        }
-      } catch (roomErr) {
-        console.error('Error storing drive key in room metadata:', roomErr);
-      }
-
-      // 2. Also store in dedicated drive metadata as backup
-      try {
-        // Create or update drive metadata - also use constant ID here
-        const metadata = {
-          id: METADATA_ID,
-          driveKey: this.driveKey,
-          createdAt: Date.now()
-        };
-
-        console.log('Storing drive key in backup metadata');
-        const driveDispatch = dispatch('@roombase/set-drive-key', metadata);
-        await this.base.append(driveDispatch);
-        success = true;
-
-        // Force an immediate ack
-        try {
-          await this.base.ack();
-        } catch (ackErr) {
-          console.warn('Error during ack:', ackErr);
-        }
-      } catch (driveErr) {
-        console.error('Error storing drive key in drive metadata:', driveErr);
-      }
-
-      // At this point, if we succeeded with at least one storage method, consider it a success
-      if (success) {
-        console.log('Drive key stored successfully');
-        return true;
-      } else {
-        console.error('Failed to store drive key in any metadata location');
-        return false;
-      }
-    } catch (err) {
-      console.error('Error storing drive key:', err);
-      return false;
-    }
-  }
-
-  // --- Fourth part: Modify the _getDriveMetadata method ---
-  async _getDriveMetadata() {
-    try {
-      const METADATA_ID = "metadata";
-      return await this.base.view.get('@roombase/drive-metadata', { id: METADATA_ID });
-    } catch (err) {
-      console.error('Error getting drive metadata:', err);
-      return null;
-    }
-  }
-
 
   static pair(store, invite, opts) {
-    return new RoomBasePairer(store, invite, opts)
+    return new RoomBasePairer(store, invite, opts);
   }
 
   async _replicate() {
-    await this.base.ready()
+    await this.base.ready();
     if (this.swarm === null) {
       this.swarm = new Hyperswarm({
         keyPair: await this.store.createKeyPair('hyperswarm'),
         bootstrap: this.bootstrap
-      })
+      });
       this.swarm.on('connection', (connection, peerInfo) => {
-        this.store.replicate(connection)
-      })
+        this.store.replicate(connection);
+      });
     }
 
-    this.pairing = new BlindPairing(this.swarm)
+    this.pairing = new BlindPairing(this.swarm);
     this.member = this.pairing.addMember({
       discoveryKey: this.base.discoveryKey,
       onadd: async (candidate) => {
         try {
-          const id = candidate.inviteId
-          const inv = await this.base.view.findOne('@roombase/invite', {})
+          const id = candidate.inviteId;
+          const inv = await this.base.view.findOne('@roombase/invite', {});
           if (!b4a.equals(inv.id, id)) {
-            return
+            return;
           }
 
-          candidate.open(inv.publicKey)
-          await this.addWriter(candidate.userData)
+          candidate.open(inv.publicKey);
+          await this.addWriter(candidate.userData);
           candidate.confirm({
             key: this.base.key,
             encryptionKey: this.base.encryptionKey
-          })
+          });
         } catch (err) {
-          console.error('Error during pairing acceptance:', err)
+          console.error('Error during pairing acceptance:', err);
         }
       }
-    })
-    this.swarm.join(this.base.discoveryKey)
+    });
+    this.swarm.join(this.base.discoveryKey);
 
-
-    this.startPeriodicDriveSync();
+    // Also join the swarm with our blob core's discovery key
+    if (this.blobCore) {
+      this.swarm.join(this.blobCore.discoveryKey);
+    }
   }
 
   async createInvite(opts = {}) {
-    if (this.opened === false) await this.ready()
-    const existing = await this.base.view.findOne('@roombase/invite', {})
+    if (this.opened === false) await this.ready();
+    const existing = await this.base.view.findOne('@roombase/invite', {});
     if (existing) {
-      return z32.encode(existing.invite)
+      return z32.encode(existing.invite);
     }
 
-    const { id, invite, publicKey, expires } = BlindPairing.createInvite(this.base.key)
-    const record = { id, invite, publicKey, expires }
-    await this.base.append(dispatch('@roombase/add-invite', record))
-    return z32.encode(record.invite)
+    const { id, invite, publicKey, expires } = BlindPairing.createInvite(this.base.key);
+    const record = { id, invite, publicKey, expires };
+    await this.base.append(dispatch('@roombase/add-invite', record));
+    return z32.encode(record.invite);
   }
 
   async addWriter(key) {
-    await this.base.append(dispatch('@roombase/add-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }))
-    return true
+    await this.base.append(dispatch('@roombase/add-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }));
+    return true;
   }
 
   async removeWriter(key) {
-    await this.base.append(dispatch('@roombase/remove-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }))
+    await this.base.append(dispatch('@roombase/remove-writer', { key: b4a.isBuffer(key) ? key : b4a.from(key) }));
   }
 
   // ---------- Message API ----------
-  async updateMessageCount(roomId) {
-    try {
-      const METADATA_ID = "metadata";
-      const room = await this.getRoomInfo();
-      if (!room) return 1;
 
-      // Update room metadata with constant ID
-      const updatedRoom = {
-        ...room,
-        messageCount: (room.messageCount || 0) + 1
-      };
-
-      const dispatchData = dispatch('@roombase/set-metadata', updatedRoom);
-      await this.base.append(dispatchData);
-
-      return updatedRoom.messageCount;
-    } catch (err) {
-      console.error('Error updating message count:', err);
-      return 1;
-    }
-  }
   async sendMessage(message) {
     // Make sure base is ready
     await this.base.ready();
 
     const msg = {
-      id: message.id || `${Date.now()}-${Math.random().toString(37).substring(2, 15)}`,
+      id: message.id || `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`,
       content: message.content || '',
       sender: message.sender || 'Unknown',
-      publicKey: message.publicKey || (this.base.writerKey ? this.base.writerKey.toString('hex') : null),
       timestamp: message.timestamp || Date.now(),
-      system: !!message.system
+      system: !!message.system,
+      // Include attachment references from message if present
+      attachments: message.attachments || null
     };
 
     try {
@@ -713,8 +422,6 @@ class RoomBase extends ReadyResource {
       // Append to autobase directly
       await this.base.append(dispatchData);
 
-      // Use constant ID for updating room metadata
-      const METADATA_ID = "metadata";
       const room = await this.getRoomInfo();
       if (room) {
         const currentCount = room.messageCount || 0;
@@ -722,10 +429,7 @@ class RoomBase extends ReadyResource {
 
         // Update room metadata with new message count
         try {
-          const dispatchData = dispatch('@roombase/set-metadata', {
-            ...room,
-            messageCount: newCount
-          });
+          const dispatchData = dispatch('@roombase/set-metadata', { ...room, messageCount: newCount });
           await this.base.append(dispatchData);
         } catch (updateErr) {
           console.error("Error updating room count:", updateErr);
@@ -735,25 +439,21 @@ class RoomBase extends ReadyResource {
       return msg.id;
     } catch (err) {
       console.error(`Error saving message with dispatch:`, err);
-      this.emit('mistake', JSON.stringify(err.message))
-      return null;
+      this.emit('mistake', JSON.stringify(err.message));
     }
   }
 
   async deleteMessage(messageId) {
-    await this.base.append(dispatch('@roombase/delete-message', { id: messageId }))
-    return true
+    await this.base.append(dispatch('@roombase/delete-message', { id: messageId }));
+    return true;
   }
 
   // ---------- Query API with Pagination ----------
 
   async getRoomInfo() {
     try {
-      // Use constant ID "metadata" instead of this.roomId
-      const METADATA_ID = "metadata";
-      return await this.base.view.get('@roombase/metadata', { id: METADATA_ID });
+      return await this.base.view.get('@roombase/metadata', { id: this.roomId });
     } catch (e) {
-      console.error('Error getting room info:', e);
       return null;
     }
   }
@@ -820,13 +520,13 @@ class RoomBase extends ReadyResource {
   }
 
   /**
- * Get all writers with access to this room
- *
- * @param {Object} opts - Query options
- * @param {boolean} opts.includeDetails - Include additional details about writers
- * @param {boolean} opts.includeMetadata - Include metadata about writer activity
- * @returns {Array} - Array of writer information
- */
+   * Get all writers with access to this room
+   *
+   * @param {Object} opts - Query options
+   * @param {boolean} opts.includeDetails - Include additional details about writers
+   * @param {boolean} opts.includeMetadata - Include metadata about writer activity
+   * @returns {Array} - Array of writer information
+   */
   async getWriters(opts = {}) {
     const { includeDetails = false, includeMetadata = false } = opts;
 
@@ -889,483 +589,403 @@ class RoomBase extends ReadyResource {
     return writers;
   }
 
-  async isDownloaded(path) {
-    if (!this.drive) return false;
+  // ---------- File API using Hyperblobs ----------
 
-    try {
-      return await this.drive.has(path);
-    } catch (err) {
-      console.error(`Error checking if ${path} is downloaded:`, err);
-      return false;
-    }
-  }
-
-  async getDriveSyncStatus() {
-    if (!this.drive) throw new Error('Drive not initialized');
-
-    try {
-      // Get drive stats
-      const length = this.drive.length;
-      const version = this.drive.version;
-
-      // Get peer count from swarm
-      let peerCount = 0;
-      if (this.swarm) {
-        peerCount = this.swarm.connections.size;
-      }
-
-      // Estimate drive size by checking a sample of entries
-      const rootEntries = await this.getFiles('/', { recursive: false });
-
-      return {
-        key: this.driveKey,
-        length,
-        version,
-        peerCount,
-        rootFolders: rootEntries.filter(e => e.isDirectory).length,
-        rootFiles: rootEntries.filter(e => !e.isDirectory).length,
-        lastUpdated: Date.now()
-      };
-    } catch (err) {
-      console.error('Error getting drive sync status:', err);
-      return {
-        key: this.driveKey,
-        error: err.message,
-        lastUpdated: Date.now()
-      };
-    }
-  }
-
-  async findDrivePeers() {
-    if (!this.drive || !this.swarm) return false;
-
-    try {
-      // Creating "finding peers" promise as per Hyperdrive docs
-      const done = this.drive.findingPeers();
-
-      // Join the swarm with the drive's discovery key
-      const discovery = this.swarm.join(this.drive.discoveryKey);
-
-      // Wait for the topic to be fully announced
-      await discovery.flushed();
-
-      // Wait for connections to be established
-      await this.swarm.flush();
-
-      // Let Hyperdrive know we're done finding peers
-      done();
-
-      return true;
-    } catch (err) {
-      console.error('Error finding drive peers:', err);
-      return false;
-    }
-  }
-
-  async updateDrive() {
-    if (!this.drive) throw new Error('Drive not initialized');
-
-    try {
-      // First find peers
-      await this.findDrivePeers();
-
-      // Then update with wait option
-      const updated = await this.drive.update({ wait: true });
-
-      return updated;
-    } catch (err) {
-      console.error('Error updating drive:', err);
-      return false;
-    }
-  }
-
-  async getDownloadStatus(path) {
-    if (!this.drive) throw new Error('Drive not initialized');
-
-    try {
-      const entry = await this.drive.entry(path);
-      if (!entry) throw new Error(`Entry not found: ${path}`);
-
-      const isDirectory = !entry.value.blob;
-
-      if (isDirectory) {
-        // For directories, check all entries
-        const entries = await this.getFiles(path, { recursive: true });
-        let totalFiles = 0;
-        let downloadedFiles = 0;
-
-        for (const entry of entries) {
-          if (!entry.isDirectory) {
-            totalFiles++;
-            if (await this.drive.has(entry.path)) {
-              downloadedFiles++;
-            }
-          }
-        }
-
-        return {
-          path,
-          isDirectory: true,
-          totalFiles,
-          downloadedFiles,
-          percentage: totalFiles > 0 ? Math.round((downloadedFiles / totalFiles) * 100) : 100
-        };
-      } else {
-        // For single files
-        const downloaded = await this.drive.has(path);
-        return {
-          path,
-          isDirectory: false,
-          downloaded,
-          percentage: downloaded ? 100 : 0
-        };
-      }
-    } catch (err) {
-      console.error(`Error getting download status for ${path}:`, err);
-      return {
-        path,
-        error: err.message,
-        downloaded: false,
-        percentage: 0
-      };
-    }
-  }
-
-  // Simplified getFiles function for a flat structure
-  async getFiles(directory = '/', options = {}) {
-    if (!this.drive) {
-      console.error('Drive not initialized in getFiles');
-      return [];
-    }
-
-
-    const { limit = 100 } = options;
-
-    try {
-      console.log(`Getting files from drive (flat structure)`);
-
-      const fileEntries = [];
-
-      // Check if drive is ready
-      if (!this.drive.ready()) {
-        await this.drive.ready();
-      }
-
-      // Add error handling for drive.list
-      try {
-        await this.updateDrive()
-        // Always list from root with no recursion
-        const stream = this.drive.list('/', { recursive: false });
-
-        if (!stream) {
-          console.error('No stream returned from drive.list');
-          return [];
-        }
-
-        for await (const entry of stream) {
-          // Skip directory markers and hidden files
-          if (entry.key.endsWith('/') || entry.key.startsWith('.')) continue;
-
-          // Skip if it's a hidden file
-          const name = entry.key.split('/').pop();
-          if (name && name.startsWith('.')) continue;
-
-          const isDirectory = !entry.value.blob;
-
-          // Skip directories in flat structure
-          if (isDirectory) continue;
-
-          // Add file to results
-          fileEntries.push({
-            ...entry,
-            path: entry.key,
-            name: name || 'Unknown',
-            isDirectory: false,
-            size: entry.value.blob ? entry.value.blob.byteLength : 0,
-            createdAt: Date.now()
-          });
-
-          if (fileEntries.length >= limit) break;
-        }
-      } catch (listErr) {
-        console.error(`Error in drive.list: ${listErr.message}`);
-      }
-
-      // Sort by newest first based on timestamp or creation time
-      return fileEntries.sort((a, b) => {
-        // Sort by timestamp if available
-        if (a.value && a.value.metadata && a.value.metadata.timestamp &&
-          b.value && b.value.metadata && b.value.metadata.timestamp) {
-          return b.value.metadata.timestamp - a.value.metadata.timestamp;
-        }
-        // Fall back to path comparison if no timestamp
-        return a.name.localeCompare(b.name);
-      });
-    } catch (err) {
-      console.error(`Error listing files:`, err);
-      return [];
-    }
-  }
-
-  watchFiles(directory = '/') {
-    if (!this.drive) throw new Error('Drive not initialized');
-
-    try {
-      // Clean up existing watcher if present
-      if (this.driveWatcher) {
-        this.driveWatcher.destroy();
-      }
-
-      // Normalize directory path
-      const dirPath = directory.endsWith('/') ? directory : directory + '/';
-
-      // Create watcher - this returns an async iterator
-      // Usage: for await (const [curr, prev] of watcher) { ... }
-      this.driveWatcher = this.drive.watch(dirPath);
-
-      // Make watcher available
-      return this.driveWatcher;
-    } catch (err) {
-      console.error(`Error watching directory ${directory}:`, err);
-      return null;
-    }
-  }
-
-  async directoryExists(path) {
-    if (!this.drive) return false;
-
-    try {
-      // Normalize path to end with / for directory
-      const dirPath = path.endsWith('/') ? path : path + '/';
-
-      // Try to list directory with limit 1
-      const entries = this.drive.list(dirPath, { limit: 1 });
-
-      // If we can get one entry, the directory exists
-      for await (const entry of entries) {
-        return true;
-      }
-
-      // No entries found
-      return false;
-    } catch (err) {
-      // Most likely the directory doesn't exist
-      return false;
-    }
-  }
-
-  // Simplified uploadFile function for flat structure
+  /**
+   * Upload a file to the user's blob store
+   * @param {Buffer} data - The file data to upload
+   * @param {string} filePath - The virtual file path (just used for the filename)
+   * @param {Object} options - Upload options
+   * @returns {Object} - File metadata including blob ID
+   */
   async uploadFile(data, filePath, options = {}) {
-    if (!this.drive) {
-      console.error('Drive not initialized');
-      return null;
+    // Make sure blob store is initialized
+    if (!this.blobStore) {
+      const initialized = await this._initializeBlobStore();
+      if (!initialized) {
+        console.error('Failed to initialize blob store');
+        return null;
+      }
     }
 
     try {
-      // Get just the filename without path
-      const filename = filePath.includes('/')
-        ? filePath.split('/').pop()
+      // Extract just the filename from the path
+      const fileName = filePath.includes('/')
+        ? path.basename(filePath)
         : filePath;
 
-      // Always store files in root with just the filename
-      const finalPath = `/${filename}`;
-
-      // Set metadata with timestamp for sorting
-      const metadata = {
-        ...(options.metadata || {}),
-        timestamp: Date.now(),
-        originalName: filename
-      };
-
-      // Simple executable flag
-      const executable = options.executable || false;
-
-      // Upload file to drive in root path
-      await this.drive.put(finalPath, data, {
-        metadata,
-        executable
-      });
+      // Upload to hyperblobs and get blob ID
+      const blobId = await this.blobStore.put(data);
 
       // Return file metadata
       return {
-        path: finalPath,
-        name: filename,
+        path: fileName, // Just store the filename
+        name: fileName,
         size: data.length,
-        metadata: metadata,
-        timestamp: metadata.timestamp
+        blobId: blobId,
+        coreKey: this.blobCore.key.toString('hex'),
+        timestamp: Date.now(),
+        metadata: options.metadata || {}
       };
     } catch (err) {
       console.error(`Error uploading file:`, err);
       return null;
     }
   }
+
+  /**
+   * Download a file from a blob store
+   * @param {string} filePath - Not used directly, but keeping for API compatibility
+   * @param {Object} options - Download options
+   * @returns {Buffer} - The file data
+   */
   async downloadFile(filePath, options = {}) {
-    if (!this.drive) throw new Error('Drive not initialized');
-
-    const { maxSize = 10 * 1024 * 1024, timeout = 30000 } = options; // Default to 10MB max, 30s timeout
-
     try {
-      // Check if file exists
-      const fileExists = await this.drive.exists(filePath);
-      if (!fileExists) throw new Error(`File does not exist: ${filePath}`);
+      // For compatibility with the existing API, we need to handle two cases:
+      // 1. Calling with a filePath string from old code - need to find the message with this attachment
+      // 2. Calling with a blob reference object that has blobId and coreKey
 
-      // Get file entry to determine size
-      const entry = await this.drive.entry(filePath);
-      if (!entry) throw new Error('Unable to get file entry');
+      let blobRef;
 
-      const fileSize = entry.value?.blob?.byteLength || 0;
+      if (typeof filePath === 'string') {
+        // Case 1: filePath is a string from old code - search messages for attachment
+        const fileName = path.basename(filePath);
+        const messages = await this.getMessages({ limit: 100 });
 
-      // For very large files, implement chunked download
-      if (fileSize > maxSize) {
-        console.warn(`Large file detected (${fileSize} bytes). Loading first ${maxSize} bytes.`);
+        // Find a message with this attachment
+        for (const msg of messages) {
+          if (msg.attachments && Array.isArray(msg.attachments)) {
+            const matchingAttachment = msg.attachments.find(att =>
+              att.name === fileName || att.path === filePath
+            );
 
-        // Create a read stream with limits
-        const stream = this.drive.createReadStream(filePath, {
-          start: 0,
-          end: maxSize - 1,
-          wait: true,
-          timeout
-        });
-
-        // Collect chunks into a buffer
-        const chunks = [];
-        for await (const chunk of stream) {
-          chunks.push(chunk);
+            if (matchingAttachment) {
+              blobRef = matchingAttachment;
+              break;
+            }
+          }
         }
 
-        const buffer = Buffer.concat(chunks);
-        return buffer;
+        if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
+          throw new Error(`File not found: ${filePath}`);
+        }
+      } else if (filePath && typeof filePath === 'object') {
+        // Case 2: filePath is actually a blob reference object
+        blobRef = filePath;
+      } else {
+        throw new Error('Invalid file reference');
       }
 
-      // For smaller files, use get with wait and timeout options
-      return await this.drive.get(filePath, { wait: true, timeout });
+      // Now we have a blob reference with blobId and coreKey
+
+      // If it's our own blob, use our blobStore directly
+      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
+        return await this.blobStore.get(blobRef.blobId, options);
+      }
+
+      // Otherwise, we need to get the blob from the owner's store
+      const ownerBlobCore = this.store.get({
+        key: Buffer.from(blobRef.coreKey, 'hex')
+      });
+
+      await ownerBlobCore.ready();
+
+      const remoteBlobStore = new Hyperblobs(ownerBlobCore);
+      const data = await remoteBlobStore.get(blobRef.blobId, {
+        wait: true,
+        timeout: options.timeout || 30000
+      });
+
+      // Close the remote core after we're done
+      await ownerBlobCore.close();
+
+      return data;
     } catch (err) {
-      console.error(`Error downloading file from ${filePath}:`, err);
+      console.error(`Error downloading file:`, err);
       return null;
     }
   }
 
-  async createDirectory(dirPath) {
-    if (!this.drive) throw new Error('Drive not initialized');
+  /**
+   * List all files shared in the room
+   * Same function name as before, but implementation changed to work with attachments in messages
+   */
+  async getFiles(directory = '/', options = {}) {
+    const { limit = 100, recursive = false } = options;
 
     try {
-      // Normalize path to ensure it ends with /
-      const normalizedPath = dirPath.endsWith('/') ? dirPath : dirPath + '/';
+      // Get messages with attachments
+      const messages = await this.getMessages({ limit: 100 });
+      const files = [];
 
-      // According to Hyperdrive documentation, directories are just paths that end with /
-      // We create an empty file to represent the directory
-      const markerPath = normalizedPath + '.hyperdrive-dir';
-
-      // Create the directory marker file
-      await this.drive.put(markerPath, Buffer.from(''), {
-        metadata: {
-          type: 'directory-marker',
-          created: Date.now()
+      // Extract file metadata from message attachments
+      for (const msg of messages) {
+        if (msg.attachments && Array.isArray(msg.attachments)) {
+          for (const attachment of msg.attachments) {
+            if (attachment && attachment.blobId && attachment.name) {
+              files.push({
+                ...attachment,
+                path: attachment.path || attachment.name,
+                sender: msg.sender,
+                messageId: msg.id,
+                timestamp: attachment.timestamp || msg.timestamp,
+                isDirectory: false
+              });
+            }
+          }
         }
-      });
+      }
 
-      return true;
+      // Sort files by timestamp (newest first)
+      return files
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, limit);
     } catch (err) {
-      console.error(`Error creating directory at ${dirPath}:`, err);
-      return false;
+      console.error(`Error listing files:`, err);
+      return [];
     }
   }
 
-  // Delete a file
+  /**
+   * Delete a file from the room
+   * @param {string} path - File path or ID to delete
+   * @returns {boolean} - Success status
+   */
   async deleteFile(path) {
-    if (!this.drive) throw new Error('Drive not initialized');
-
     try {
-      const entry = await this.drive.entry(path);
-      if (!entry) throw new Error(`File not found: ${path}`);
+      // Only the owner can delete their files
+      // First, check if this is our file by getting the attachment info
+      let fileToDelete = null;
 
-      await this.drive.del(path);
+      const messages = await this.getMessages({ limit: 100 });
+
+      // Find the message containing this attachment
+      for (const msg of messages) {
+        if (msg.attachments && Array.isArray(msg.attachments)) {
+          const attachment = msg.attachments.find(att =>
+            att.path === path || att.name === path || (att.blobId && att.blobId === path)
+          );
+
+          if (attachment) {
+            fileToDelete = {
+              ...attachment,
+              messageId: msg.id,
+              sender: msg.sender
+            };
+            break;
+          }
+        }
+      }
+
+      if (!fileToDelete) {
+        throw new Error(`File not found: ${path}`);
+      }
+
+      // Only delete if it's our file
+      const isOurFile = fileToDelete.coreKey === this.blobCore.key.toString('hex');
+
+      if (!isOurFile) {
+        throw new Error('Cannot delete files owned by other users');
+      }
+
+      // Clear the blob from our blob store
+      if (this.blobStore && fileToDelete.blobId) {
+        await this.blobStore.clear(fileToDelete.blobId);
+      }
+
+      // Also update the message to remove this attachment
+      const msg = await this.base.view.get('@roombase/messages', { id: fileToDelete.messageId });
+      if (msg && msg.attachments) {
+        // Create updated message with this attachment removed
+        const updatedMsg = {
+          ...msg,
+          attachments: msg.attachments.filter(att =>
+            att.blobId !== fileToDelete.blobId
+          )
+        };
+
+        // Delete old message and insert updated one
+        await this.base.view.delete('@roombase/messages', { id: msg.id });
+        await this.base.view.insert('@roombase/messages', updatedMsg);
+      }
+
       return true;
     } catch (err) {
-      console.error(`Error deleting file at ${path}:`, err);
+      console.error(`Error deleting file:`, err);
       return false;
     }
   }
 
   /**
- * Delete a file or directory from the drive
- * @param {string} path - Path to delete
- * @returns {Promise<boolean>} Success status
- */
-  async deleteFile(filePath) {
-    if (!this.drive) throw new Error('Drive not initialized');
-
+   * Check if a file is downloaded
+   * @param {string} path - File path to check
+   * @returns {boolean} - Whether the file is downloaded
+   */
+  async isDownloaded(path) {
     try {
-      // Check if the file exists
-      const exists = await this.drive.exists(filePath);
-      if (!exists) throw new Error(`File not found: ${filePath}`);
+      // Find the blob reference for this path
+      const fileName = path.includes('/') ? path.split('/').pop() : path;
 
-      // Get the entry to determine if it's a file or directory
-      const entry = await this.drive.entry(filePath);
-      const isDirectory = !entry?.value?.blob;
+      const messages = await this.getMessages({ limit: 100 });
+      let blobRef = null;
 
-      if (isDirectory) {
-        // If it's a directory (path ends with /), delete all contents
-        return await this.deleteDirectory(filePath);
-      } else {
-        // Delete single file
-        await this.drive.del(filePath);
-        return true;
-      }
-    } catch (err) {
-      console.error(`Error deleting ${filePath}:`, err);
-      return false;
-    }
-  }
-  async deleteDirectory(dirPath) {
-    if (!this.drive) throw new Error('Drive not initialized');
+      // Find the message with this attachment
+      for (const msg of messages) {
+        if (msg.attachments && Array.isArray(msg.attachments)) {
+          const attachment = msg.attachments.find(att =>
+            att.name === fileName || att.path === path
+          );
 
-    try {
-      // Normalize path to ensure it ends with /
-      const normalizedPath = dirPath.endsWith('/') ? dirPath : dirPath + '/';
-
-      // Get all entries in this directory
-      const entries = await this.getFiles(normalizedPath, { recursive: true });
-
-      // Delete all entries (files first, then directories)
-      // Sort in reverse order to delete deeper paths first
-      const sortedEntries = entries.sort((a, b) => b.path.length - a.path.length);
-
-      for (const entry of sortedEntries) {
-        try {
-          await this.drive.del(entry.path);
-        } catch (err) {
-          console.error(`Error deleting entry ${entry.path}:`, err);
-          // Continue with other entries
+          if (attachment) {
+            blobRef = attachment;
+            break;
+          }
         }
       }
 
-      // Delete the directory marker if it exists
-      try {
-        await this.drive.del(normalizedPath + '.hyperdrive-dir');
-      } catch (e) {
-        // Ignore errors if marker doesn't exist
+      if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
+        return false;
       }
 
-      return true;
+      // If it's our own blob, we always have it
+      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
+        return true;
+      }
+
+      // For other blobs, check if we can access it
+      try {
+        const remoteCore = this.store.get({ key: Buffer.from(blobRef.coreKey, 'hex') });
+        await remoteCore.ready();
+
+        // If we can get the blob core's info, consider it downloaded
+        const downloaded = remoteCore.length > 0;
+        await remoteCore.close();
+
+        return downloaded;
+      } catch (err) {
+        return false;
+      }
     } catch (err) {
-      console.error(`Error deleting directory ${dirPath}:`, err);
+      console.error(`Error checking if file is downloaded:`, err);
       return false;
     }
   }
 
+  /**
+   * Create a directory (not used with Hyperblobs but kept for API compatibility)
+   */
+  async createDirectory(dirPath) {
+    // Hyperblobs doesn't support directories directly
+    // This is just a stub for backward compatibility
+    console.warn('createDirectory() is not supported with Hyperblobs - using flat file structure');
+    return false;
+  }
 
-  // Improved static joinRoom function for better drive handling
+  /**
+   * Compatibility function that doesn't do much with Hyperblobs
+   */
+  async navigateDirectory(path) {
+    // This is just a stub for backward compatibility
+    return await this.getFiles('/', { recursive: false });
+  }
+
+  async getFileInfo(filePath) {
+    try {
+      const fileName = path.basename(filePath);
+      const messages = await this.getMessages({ limit: 100 });
+
+      // Find a message with this attachment
+      for (const msg of messages) {
+        if (msg.attachments && Array.isArray(msg.attachments)) {
+          const attachment = msg.attachments.find(att =>
+            att.name === fileName || att.path === filePath
+          );
+
+          if (attachment) {
+            return {
+              ...attachment,
+              sender: msg.sender,
+              timestamp: attachment.timestamp || msg.timestamp
+            };
+          }
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error(`Error getting file info:`, err);
+      return null;
+    }
+  }
+
+  /**
+   * Check if a blob is available in a user's blob store
+   * @param {Object} blobRef - The blob reference with coreKey and blobId
+   * @returns {boolean} - Whether the blob is available
+   */
+  async isBlobAvailable(blobRef) {
+    if (!blobRef || !blobRef.blobId || !blobRef.coreKey) {
+      return false;
+    }
+
+    try {
+      // If it's in our blob store, check directly
+      if (this.blobCore && blobRef.coreKey === this.blobCore.key.toString('hex')) {
+        // For our own blobs, we can just check if the blobStore has the ID
+        return true; // We always have our own blobs
+      }
+
+      // For other users' blobs, we need to open their blob core
+      const ownerBlobCore = this.store.get({
+        key: Buffer.from(blobRef.coreKey, 'hex')
+      });
+
+      await ownerBlobCore.ready();
+
+      // We can consider a blob available if we can get the core
+      const available = ownerBlobCore.length > 0;
+
+      await ownerBlobCore.close();
+      return available;
+    } catch (err) {
+      console.error(`Error checking blob availability:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Get a list of all unique blob cores referenced in messages
+   * @returns {Array} - Array of blob core keys
+   */
+  async getBlobCores() {
+    try {
+      const messages = await this.getMessages({ limit: 100 });
+      const coreKeys = new Set();
+
+      // Collect all unique blob core keys
+      for (const msg of messages) {
+        if (msg.attachments && Array.isArray(msg.attachments)) {
+          for (const attachment of msg.attachments) {
+            if (attachment && attachment.coreKey) {
+              coreKeys.add(attachment.coreKey);
+            }
+          }
+        }
+      }
+
+      return Array.from(coreKeys);
+    } catch (err) {
+      console.error(`Error getting blob cores:`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Static method to join a room using an invite code
+   */
   static async joinRoom(store, inviteCode, opts = {}) {
-    if (!store) {
-      throw new Error('Corestore is required');
-    }
-
-    if (!inviteCode) {
-      throw new Error('Invite code is required');
-    }
-
-    console.log(`Joining room with invite code: ${inviteCode}`);
+    if (!store) throw new Error('Corestore is required');
+    if (!inviteCode) throw new Error('Invite code is required');
 
     try {
       // Create pairing instance
@@ -1373,47 +993,9 @@ class RoomBase extends ReadyResource {
 
       // Wait for pairing to complete
       const room = await pair.finished();
-      console.log('Pairing completed successfully');
 
       // Wait for room to be fully ready
       await room.ready();
-      console.log('Room is ready');
-
-      // Force an update to get the latest metadata
-      try {
-        await room.base.update({ wait: true });
-        console.log('Base updated with latest metadata');
-
-        // Get room info with constant ID to ensure we get the correct metadata
-        const roomInfo = await room.getRoomInfo();
-        if (roomInfo) {
-          // Update the room name from metadata
-          room.roomName = roomInfo.name || room.roomName;
-
-          // If room has an original ID, use it
-          if (roomInfo.originalRoomId) {
-            room.roomId = roomInfo.originalRoomId;
-          }
-
-          console.log(`Synced room metadata: name=${room.roomName}, id=${room.roomId}`);
-        }
-      } catch (updateErr) {
-        console.warn('Error updating base:', updateErr);
-        // Continue anyway - we'll try to get drive info next
-      }
-
-      // Try to initialize the drive using existing key from metadata
-      const driveInitResult = await room._initializeDrive();
-      console.log(`Drive initialization result: ${driveInitResult ? 'success' : 'waiting for metadata'}`);
-
-      // If drive initialization failed, it might be because we need to wait for metadata
-      if (!driveInitResult) {
-        console.log('Initial drive initialization failed, will retry after room sync');
-        // We can still return the room - drive will be initialized later when metadata is available
-
-        // Start periodic drive sync with shorter interval for quicker initial connection
-        room.startPeriodicDriveSync(10000); // Check every 10 seconds initially
-      }
 
       return room;
     } catch (err) {
@@ -1421,110 +1003,9 @@ class RoomBase extends ReadyResource {
       throw err;
     }
   }
-
-
-  startPeriodicDriveSync(intervalMs = 30000) {
-    // Clear any existing sync interval
-    if (this._driveSyncInterval) {
-      clearInterval(this._driveSyncInterval);
-    }
-
-    // Set up new sync interval - run syncDrive periodically
-    this._driveSyncInterval = setInterval(async () => {
-      try {
-        // Only try to sync if we don't have a drive yet or haven't accessed it recently
-        const needsSync = !this.drive || (Date.now() - (this._lastDriveAccess || 0) > intervalMs);
-
-        if (needsSync) {
-          console.log('Running periodic drive sync...');
-          await this.syncDrive();
-        }
-      } catch (err) {
-        console.error('Error in periodic drive sync:', err);
-      }
-    }, intervalMs);
-
-    // Return the interval ID for potential cancellation
-    return this._driveSyncInterval;
-  }
-
-  // Add this method to stop periodic syncing
-  stopPeriodicDriveSync() {
-    if (this._driveSyncInterval) {
-      clearInterval(this._driveSyncInterval);
-      this._driveSyncInterval = null;
-      return true;
-    }
-    return false;
-  }
-
-  // Track drive accesses to optimize sync frequency
-  _trackDriveAccess() {
-    this._lastDriveAccess = Date.now();
-  }
-
-  async syncDrive() {
-    // Skip if we already have a working drive
-    if (this.drive) {
-      console.log('Drive already initialized, checking for updates');
-      try {
-        await this.drive.update({ wait: true });
-        console.log('Drive updated');
-        return true;
-      } catch (updateErr) {
-        console.warn('Error updating drive:', updateErr);
-      }
-    }
-
-    try {
-      // Force an update to get the latest metadata
-      await this.base.update({ wait: true });
-
-      // Get the latest room info to see if drive key is available
-      const roomInfo = await this.getRoomInfo();
-
-      if (roomInfo && roomInfo.driveKey) {
-        console.log(`Found drive key in room metadata: ${roomInfo.driveKey}`);
-
-        // Only update our drive key if it's different
-        if (this.driveKey !== roomInfo.driveKey) {
-          console.log(`Updating drive key from ${this.driveKey} to ${roomInfo.driveKey}`);
-          this.driveKey = roomInfo.driveKey;
-        }
-
-        // If we don't have a drive yet, initialize it
-        if (!this.drive) {
-          console.log('Initializing drive with key from metadata');
-          const success = await this._initializeDrive();
-
-          if (!success) {
-            console.error('Failed to initialize drive with key from metadata');
-            return false;
-          }
-
-          console.log('Drive initialized successfully');
-          return true;
-        }
-
-        return true;
-      } else {
-        console.log('No drive key found in metadata');
-
-        // If we're the room creator, we can create a drive
-        if (this.base.writable && !this.drive && !this.driveKey) {
-          console.log('We are room creator, creating new drive');
-          const success = await this._initializeDrive();
-          return success;
-        }
-
-        return false;
-      }
-    } catch (err) {
-      console.error('Error syncing drive:', err);
-      return false;
-    }
-  }
 }
+
+// Helper function for error handling
 function noop() { }
 
-export default RoomBase
+export default RoomBase;

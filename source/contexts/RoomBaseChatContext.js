@@ -1,8 +1,9 @@
-// source/contexts/RoomBaseChatContext.js
+// source/contexts/RoomBaseChatContext.js - Updated for Hyperblobs
 import React, { useState, createContext, useContext, useReducer, useCallback } from 'react';
 import { getBindingsForContext } from '../utils/keymap.js';
 import { useRoomBase } from './RoomBaseContext.js';
 import clipboardy from 'clipboardy';
+import path from 'path';
 
 // Define action types
 const ACTIONS = {
@@ -453,13 +454,25 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
       const file = filesArray[index];
       try {
-        // Use the uploadFile from context, not the local function name
-        await uploadFile(activeRoomId, file);
+        // Get file name from path or use as is
+        const fileName = file.path ? path.basename(file.path) : (file.name || `file-${Date.now()}`);
+
+        // Upload the file using RoomBaseContext's uploadFile
+        await uploadFile(activeRoomId, file, fileName);
 
         // Upload next file
         processFiles(index + 1);
       } catch (err) {
-        console.error(`Error uploading file ${file.name}:`, err);
+        console.error(`Error uploading file ${file.name || 'unknown'}:`, err);
+
+        // Show error message
+        if (activeRoomId) {
+          sendMessage(
+            activeRoomId,
+            `Error uploading file: ${err.message}`,
+            true
+          );
+        }
 
         // Continue with next file
         processFiles(index + 1);
@@ -468,7 +481,9 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
 
     // Start uploading files
     processFiles(0);
-  }, [activeRoomId, uploadFile, setShowFileExplorer, setLoading]); const contextValue = {
+  }, [activeRoomId, uploadFile, setShowFileExplorer, setLoading, sendMessage]);
+
+  const contextValue = {
     // From RoomBase context
     rooms,
     activeRoom,
@@ -525,4 +540,4 @@ export const RoomBaseChatProvider = ({ children, onBack }) => {
   );
 };
 
-export default RoomBaseChatContext
+export default RoomBaseChatContext;
