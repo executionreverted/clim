@@ -6,15 +6,7 @@ import App from './app.js';
 
 const cli = meow(
   `
-		Usage
-		  $ myapp
 
-		Options
-			--name  Your name
-
-		Examples
-		  $ myapp --name=Jane
-		  Hello, Jane
 	`,
   {
     importMeta: import.meta,
