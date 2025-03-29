@@ -23,8 +23,6 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
   const optionsKey = getBindingDescription(contextBindings.startOptions);
   const exitKey = getBindingDescription(contextBindings.exit);
 
-  // Calculate appropriate text width based on terminal width
-  const textWidth = Math.min(width, 60);  // Limit max width to 80 chars
   const titleText = "hyper";
   const titleSubText = "chatters"
 
