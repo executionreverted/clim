@@ -1,7 +1,10 @@
 {
-	"name": "myapp",
-	"version": "0.0.0",
+	"name": "@hyperchatters/cli",
+	"version": "0.0.1",
 	"license": "MIT",
+	"author": {
+		"name": "executionreverted"
+	},
 	"bin": "dist/cli.js",
 	"type": "module",
 	"engines": {
