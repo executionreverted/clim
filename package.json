@@ -1,11 +1,13 @@
 {
-	"name": "@hyperchatters/cli",
+	"name": "hyperchatters",
 	"version": "0.0.1",
 	"license": "MIT",
 	"author": {
 		"name": "executionreverted"
 	},
-	"bin": "dist/cli.js",
+	"bin": {
+		"hyperchatters": "./dist/cli.js"
+	},
 	"type": "module",
 	"engines": {
 		"node": ">=20"
@@ -14,7 +16,7 @@
 		"build": "babel --out-dir=dist source",
 		"dev": "babel --out-dir=dist --watch source",
 		"test": "prettier --check . && xo && ava",
-		"postinstall": "npm i --legacy-peer-deps && npm run build"
+		"postinstall": "npm i --legacy-peer-deps && npm run build && chmod +x dist/cli.js"
 	},
 	"files": [
 		"dist"
