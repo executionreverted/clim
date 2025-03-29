@@ -20,13 +20,13 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
 
   // Get human-readable key descriptions
   const chatKey = getBindingDescription(contextBindings.startChat);
-  const explorerKey = getBindingDescription(contextBindings.startExplorer);
   const optionsKey = getBindingDescription(contextBindings.startOptions);
   const exitKey = getBindingDescription(contextBindings.exit);
 
   // Calculate appropriate text width based on terminal width
-  const textWidth = Math.min(width - 4, 80);  // Limit max width to 80 chars
-  const titleText = "Termin4LHub";
+  const textWidth = Math.min(width, 60);  // Limit max width to 80 chars
+  const titleText = "hyper";
+  const titleSubText = "chatters"
 
   return (
     <Box
@@ -41,9 +41,12 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
       <Box flexGrow={1} />
 
       {/* Ensure gradient text has enough width */}
-      <Box width={textWidth}>
+      <Box gap={0} justifyContent="center" alignItems="center" flexDirection={"column"} width={"100%"}>
         <Gradient name="rainbow">
-          <BigText text={titleText} font="shade" align="center" space={false} />
+          <BigText text={titleText} />
+        </Gradient>
+        <Gradient name="rainbow">
+          <BigText font='tiny' text={titleSubText} />
         </Gradient>
       </Box>
 
@@ -59,7 +62,7 @@ const Welcome = ({ onStart, width = 100, height = 24 }) => {
       </Box>
 
       <Box marginY={1}>
-        <Text dimColor>Customize keys in ~/.hyperchatters.conf</Text>
+        <Text dimColor>Loaded  ~/config/.hyperchatters</Text>
       </Box>
 
       <Box flexGrow={1} />
